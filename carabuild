@@ -1,0 +1,81 @@
+npm i -g eas-cli
+eas --version
+eas login
+eas build:configure
+eas build --profile development --platform android
+
+
+Alternatif: build lokal (tanpa EAS cloud)
+
+Kalau kamu ingin build di mesin sendiri:
+
+npx expo prebuild          # generate android/ (bare)
+npx expo run:android       # butuh Android Studio + SDK
+
+
+Opsi A — Build di cloud (disarankan)
+
+Jalankan:
+
+eas build --profile development --platform android --wait
+
+
+--wait biar CLI nampil log build sampai selesai.
+
+Atau cek/donwload dari dashboard/link yang muncul, atau via CLI:
+
+eas build:list
+eas build:download --latest -p android
+
+
+Hasilnya APK karena profile development kamu sudah buildType: "apk".
+
+Catatan kuning “android.package in app.json is ignored…” hanya info karena proyekmu punya folder android/. Itu bukan masalah.
+
+Opsi B — Paksa build lokal (tanpa upload)
+
+Kalau kamu mau build di komputer sendiri (tidak upload ke cloud):
+
+eas build --local --profile development --platform android
+
+
+Perlu Android SDK/NDK, Java, Gradle terpasang. Kalau belum siap, opsi A lebih mudah.
+
+Opsi C — Build langsung lewat Gradle (APK debug cepat)
+
+Di folder android/:
+
+cd android
+./gradlew assembleDebug   # (Windows: gradlew.bat assembleDebug)
+
+
+Opsi 2 — Build & jalankan dev client lokal dengan Gradle (Windows supported)
+
+Ini bukan EAS local build; ini pakai expo run:android sehingga bisa di Windows.
+
+Pasang dev client (sekali):
+
+npx expo install expo-dev-client
+
+
+(Jika belum ada folder android/) prebuild native:
+
+npx expo prebuild
+
+
+Pastikan app.json sudah sesuai (mis. usesCleartextTraffic kalau akses http://LAN
+).
+
+Build & install ke emulator/HP:
+
+npx expo run:android
+
+
+Ini akan compile dengan Gradle dan meng-install dev client ke emulator/HP.
+
+Coding harian:
+
+npx expo start --dev-client
+
+
+Tiap ubah JS/TS cukup reload, tidak perlu build ulang kecuali menambah library native lagi.

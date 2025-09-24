@@ -1,0 +1,27 @@
+# Jangan kirim folder hasil build
+android/app/build/
+android/build/
+android/.gradle/
+android/.cxx/
+ios/build/
+ios/Pods/
+
+# Editor/OS
+.DS_Store
+.vscode/
+.idea/
+
+# Expo/Metro cache
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+# Testing/docs
+coverage/
+__tests__/
+docs/
+*.log
+
+# # Jika ada aset mentah yang tak dibutuhkan di build
+# assets/raw/

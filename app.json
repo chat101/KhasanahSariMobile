@@ -1,0 +1,71 @@
+{
+  "expo": {
+    "name": "KhasanahSari",
+    "slug": "KhasanahSari",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "khasanahsari",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "icon": "./assets/icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon-tight.png",
+        "backgroundColor": "#000000",
+        "monochromeImage": "./assets/adaptive-icon-monochrome.png"
+      },
+      "notification": {
+        "icon": "./assets/notification-icon.png",
+        "color": "#4338CA"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "googleServicesFile": "./google-services.json",
+      "package": "com.jasmerah.KhasanahSari"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "backgroundColor": "#000000"
+          }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "alerts",
+          "sounds": [
+            "./assets/alarm.wav"
+          ]
+        }
+      ],
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7ef366cc-bbe0-47b6-8ca9-6ac18758d80e"
+      }
+    },
+    "owner": "jasmerah"
+  }
+}

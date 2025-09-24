@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "779187935472",
+    "project_id": "khasanahsari-54b72",
+    "storage_bucket": "khasanahsari-54b72.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:779187935472:android:5ba27d98c6fe4d40d94a35",
+        "android_client_info": {
+          "package_name": "com.jasmerah.KhasanahSari"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCWDmBCPkk14yRjeuC8fS3F7yhEkWYNDoE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
