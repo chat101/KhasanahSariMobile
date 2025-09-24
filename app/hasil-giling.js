@@ -709,7 +709,7 @@ export default function HasilDivisiScreen() {
     <>
       <View style={s.topBar}>
         <Text style={s.title}>
-          Divisi {divisiName || (divisiId != null ? `#${divisiId}` : "—")}
+          Divisi tes git{divisiName || (divisiId != null ? `#${divisiId}` : "—")}
         </Text>
 
         <View style={[s.iconBtn, { marginRight: 8 }]}>
