@@ -7,28 +7,17 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Pressable, StyleSheet, Text,
+  Pressable,
+  StyleSheet,
+  Text,
   TextInput,
-  View
+  View,
 } from "react-native";
 
-import { api } from "../src/api";
+import { api, ApiError } from "../src/api";
 import { API_BASE, KEY_TOKEN, KEY_USER } from "../src/config";
 
-// // ---- fungsi test ----
-// async function testPing() {
-//   const url = `${API_BASE}/api/ping`;
-//   try {
-//     console.log("TEST GET →", url);
-//     const r = await fetch(url);
-//     const t = await r.text();
-//     console.log("TEST GET STATUS:", r.status, t);
-//     Alert.alert("GET /ping", `status: ${r.status}\nbody: ${t}`);
-//   } catch (e) {
-//     console.log("TEST GET ERR:", e.message);
-//     Alert.alert("GET /ping ERR", String(e.message));
-//   }
-// }
+// ---- fungsi test (opsional) ----
 async function testPostEcho() {
   const url = `${API_BASE}/api/debug/echo`;
   try {
@@ -69,11 +58,44 @@ export default function LoginScreen() {
         method: "POST",
         body: JSON.stringify({ login, password, device_name: "expo-app" }),
       });
+
       await AsyncStorage.setItem(KEY_TOKEN, json.token);
       await AsyncStorage.setItem(KEY_USER, JSON.stringify(json.user || {}));
       router.replace("/");
     } catch (e) {
-      Alert.alert("Gagal", String(e.message || e));
+      // Tangani error dengan pesan yang spesifik
+      if (e instanceof ApiError) {
+        if (e.code === "NETWORK_ERROR" || e.code === "TIMEOUT") {
+          Alert.alert("Koneksi", e.message);
+        } else {
+          switch (e.status) {
+            case 401:
+              Alert.alert("Login gagal", "Password salah. Silakan coba lagi.");
+              break;
+            case 404:
+              Alert.alert("Tidak ditemukan", "UID/Email tidak terdaftar.");
+              break;
+            case 422: {
+              const fieldMsg =
+                typeof e.details === "object"
+                  ? Object.values(e.details?.errors || {}).flat().join("\n")
+                  : "";
+              Alert.alert("Validasi", fieldMsg || e.message);
+              break;
+            }
+            case 429:
+              Alert.alert("Terlalu sering", "Terlalu banyak percobaan. Coba lagi beberapa saat.");
+              break;
+            case 500:
+            default:
+              Alert.alert("Kesalahan Server", e.message || "Terjadi kesalahan pada server.");
+              break;
+          }
+        }
+      } else {
+        // Fallback kalau bukan ApiError
+        Alert.alert("Gagal", String(e?.message || e));
+      }
     } finally {
       setBusy(false);
     }
@@ -84,7 +106,7 @@ export default function LoginScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Already have an Account?</Text>
         <Image
-          source={require(".././assets/images/KS.png")} // sesuaikan relatif path-nya
+          source={require(".././assets/images/KS.png")}
           style={styles.illustration}
         />
       </View>
@@ -122,23 +144,14 @@ export default function LoginScreen() {
           )}
         </Pressable>
 
-        {/* ⬇️ tombol test HARUS di dalam return */}
+        {/* Tombol test opsional */}
         {/* <View style={testStyles.row}>
-          <Pressable onPress={testPing} style={testStyles.btn}>
-            <Text style={testStyles.txt}>Test GET</Text>
-          </Pressable>
-          <Pressable
-            onPress={testPostEcho}
-            style={[testStyles.btn, testStyles.ml8]}
-          >
+          <Pressable onPress={testPostEcho} style={[testStyles.btn, { backgroundColor: "#555" }]}>
             <Text style={testStyles.txt}>Test POST</Text>
           </Pressable>
         </View> */}
-        {/* ⬆️ */}
 
-        <Pressable
-          onPress={() => Alert.alert("Info", "Register belum tersedia")}
-        >
+        <Pressable onPress={() => Alert.alert("Info", "Register belum tersedia")}>
           <Text style={styles.register}>New user? Register Now</Text>
         </Pressable>
 

@@ -757,7 +757,7 @@ export default function HomeScreen() {
                 <Text style={styles.avatarTxt}>{initial}</Text>
               </View>
               <View style={styles.headerTitleWrap}>
-                <Text style={styles.hello}>Selamat datang  zzzzzzzzzz</Text>
+                <Text style={styles.hello}>Selamat datang </Text>
                 <Text style={styles.headerTitle}>
                   Halo{name ? `, ${name}` : ""}
                 </Text>
