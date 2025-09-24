@@ -266,59 +266,69 @@ async function scheduleRepeatingReminder(key, title, body) {
 }
 
 /* ====== Slider (tanpa library) ====== */
-const SLIDES = [
-  { id: "1", uri: "https://picsum.photos/1200/600?random=1" },
-  { id: "2", uri: "https://picsum.photos/1200/600?random=2" },
-  { id: "3", uri: "https://picsum.photos/1200/600?random=3" },
-];
-function AutoCarousel() {
+// const SLIDES = [
+//   { id: "1", uri: "https://picsum.photos/1200/600?random=1" },
+//   { id: "2", uri: "https://picsum.photos/1200/600?random=2" },
+//   { id: "3", uri: "https://picsum.photos/1200/600?random=3" },
+// ];
+function AutoCarousel({ slides, refreshing = false, onRefresh }) {
   const width = Dimensions.get("window").width - 36; // padding 18 kiri/kanan
   const ref = useRef(null);
   const [idx, setIdx] = useState(0);
 
+  // auto-scroll aman jika slides >= 2
   useEffect(() => {
+    if (!slides || slides.length < 2) return;
     const id = setInterval(() => {
-      const next = (idx + 1) % SLIDES.length;
-      setIdx(next);
-      ref.current?.scrollToIndex?.({ index: next, animated: true });
+      setIdx((curr) => {
+        const next = (curr + 1) % slides.length;
+        ref.current?.scrollToIndex?.({ index: next, animated: true });
+        return next;
+      });
     }, 3000);
     return () => clearInterval(id);
-  }, [idx]);
+  }, [slides?.length]);
+
+  if (!slides || slides.length === 0) {
+    return (
+      <View style={[styles.carouselWrap, { width }]}>
+        <View style={[styles.slideImg, { width, alignItems: "center", justifyContent: "center" }]}>
+          <Text style={{ color: COLORS.muted }}>Belum ada slide</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.carouselWrap, { width }]}>
       <FlatList
         ref={ref}
-        data={SLIDES}
-        keyExtractor={(it) => it.id}
+        data={slides}
+        keyExtractor={(it) => String(it.id)}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        getItemLayout={(_, i) => ({
-          length: width,
-          offset: width * i,
-          index: i,
-        })}
+        getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
         renderItem={({ item }) => (
-          <Image
-            source={{ uri: item.uri }}
-            style={[styles.slideImg, { width }]}
-            resizeMode="cover"
-          />
+          <Image source={{ uri: item.uri }} style={[styles.slideImg, { width }]} resizeMode="cover" />
         )}
         onMomentumScrollEnd={(e) => {
           const i = Math.round(e.nativeEvent.contentOffset.x / width);
           setIdx(i);
         }}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
       />
       <View style={styles.dotsRow}>
-        {SLIDES.map((_, i) => (
+        {slides.map((_, i) => (
           <View key={i} style={i === idx ? styles.dotActive : styles.dot} />
         ))}
       </View>
     </View>
   );
 }
+
+
 function HapticPressable({ onPress, children, style, androidRipple, ...rest }) {
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -371,13 +381,13 @@ function CategoryGrid({ items }) {
     <View style={styles.catCard}>
       <Text style={styles.catTitle}>Categories</Text>
       <View style={styles.catGrid}>
-      {items.map((it) => (
+        {items.map((it) => (
           <HapticPressable
             key={it.key}
             onPress={it.onPress || (() => {})}
             style={styles.catItem}
           >
-              <View style={styles.catIconWrap}>
+            <View style={styles.catIconWrap}>
               {!!it.badge && (
                 <View
                   style={[
@@ -399,7 +409,7 @@ function CategoryGrid({ items }) {
             <Text style={styles.catText} numberOfLines={1}>
               {it.label}
             </Text>
-            </HapticPressable>
+          </HapticPressable>
         ))}
       </View>
     </View>
@@ -416,6 +426,10 @@ export default function HomeScreen() {
   const [maxTambahan, setMaxTambahan] = useState(0);
   const pollRef = useRef(null);
 
+  //slide
+  const [slides, setSlides] = useState([]);
+  const [slidesLoading, setSlidesLoading] = useState(true);
+  const [slidesRefreshing, setSlidesRefreshing] = useState(false); // <— tambah ini
   // Animasi
   const aFade = useRef(new Animated.Value(0)).current;
   const aTrans = useRef(new Animated.Value(10)).current;
@@ -441,7 +455,8 @@ export default function HomeScreen() {
     if (r === "admin") return true;
     if (key === "work-order-utama")
       return ["adminproduksi", "leaderproduksi"].includes(r);
-    if (key === "work-order-tambahan") return ["adminproduksi","leaderproduksi","admin"].includes(r);
+    if (key === "work-order-tambahan")
+      return ["adminproduksi", "leaderproduksi", "admin"].includes(r);
     if (key === "selesai-divisi")
       return ["adminproduksi", "leaderproduksi", "gudang"].includes(r);
     if (key === "hasil-giling")
@@ -582,7 +597,49 @@ export default function HomeScreen() {
     ].filter(Boolean);
     return list.slice(0, 8);
   }, [role, hasNewUtama, maxTambahan, utamaRows]);
-
+  //slide
+  const fetchSlides = useCallback(async () => {
+    try {
+      // pastikan tidak dobel slash saat join
+      const base = String(API_BASE || "").replace(/\/+$/, "");
+      const url = `${base}/api/slides`; // <-- sesuai route kamu: Route::get('/slides', ...)
+      console.log("Fetching slides from:", url);
+      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+  
+      // backend kamu mengembalikan array langsung: [{id, uri}, ...]
+      const norm = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.data)
+        ? data.data
+        : [];
+  
+      const cleaned = norm
+        .filter((x) => x && x.id != null && x.uri)
+        .map((x) => ({ id: String(x.id), uri: String(x.uri) }));
+  
+      setSlides(cleaned);
+    } catch (e) {
+      console.log("slides fetch error:", e?.message || e);
+      // fallback dummy agar UI tetap hidup (opsional)
+      setSlides([
+        { id: "1", uri: "https://picsum.photos/1200/600?random=1" },
+        { id: "2", uri: "https://picsum.photos/1200/600?random=2" },
+        { id: "3", uri: "https://picsum.photos/1200/600?random=3" },
+      ]);
+    } finally {
+      setSlidesLoading(false);
+    }
+  }, []);
+  const handleRefreshSlides = useCallback(async () => {
+    try {
+      setSlidesRefreshing(true);
+      await fetchSlides();
+    } finally {
+      setSlidesRefreshing(false);
+    }
+  }, [fetchSlides]);
   // ===== efek & polling =====
   useEffect(() => {
     (async () => {
@@ -665,6 +722,11 @@ export default function HomeScreen() {
     })();
   }, [router]);
 
+  //slide
+  useEffect(() => {
+    fetchSlides();
+  }, [fetchSlides]);
+
   useEffect(() => {
     (async () => {
       const auth = await AsyncStorage.getItem(KEY_TOKEN);
@@ -727,7 +789,9 @@ export default function HomeScreen() {
       colors={[COLORS.bgTop, COLORS.bgBottom]}
       style={styles.container}
     >
-         <SafeAreaView style={{ flex: 0.1, backgroundColor: "#F2FBF4" }}></SafeAreaView>
+      <SafeAreaView
+        style={{ flex: 0.1, backgroundColor: "#F2FBF4" }}
+      ></SafeAreaView>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar barStyle="dark-content" />
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
@@ -802,7 +866,21 @@ export default function HomeScreen() {
           </View>
 
           {/* SLIDER */}
-          <AutoCarousel />
+          {/* SLIDER */}
+          {slidesLoading ? (
+  <View style={[styles.carouselWrap, { width: Dimensions.get("window").width - 36 }]}>
+    <View style={[styles.slideImg, { alignItems: "center", justifyContent: "center" }]}>
+      <ActivityIndicator />
+    </View>
+  </View>
+) : (
+  <AutoCarousel
+    slides={slides}
+    refreshing={slidesRefreshing}
+    onRefresh={handleRefreshSlides}
+  />
+)}
+
 
           {/* KATEGORI (dengan badge) */}
           <Animated.View
