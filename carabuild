@@ -1,4 +1,4 @@
-npm i -g eas-cli
+npm i -g eas-cli asas
 eas --version
 eas login
 eas build:configure
