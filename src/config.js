@@ -6,8 +6,8 @@ export const ANDROID_CHANNEL_ID = "alerts"
 // Ambil dari app.json → expo.extra.eas.apiBase
 export const API_BASE =
   Constants.expoConfig?.extra?.eas?.apiBase ??
-  "https://hoks.khasanah-bakery.com";
-  // "http://192.168.0.109:8000";
+  // "https://hoks.khasanah-bakery.com";
+  "http://192.168.0.108:8000";
 
 console.log("API_BASE =", API_BASE);
 

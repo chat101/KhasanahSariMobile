@@ -9,6 +9,14 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { api } from "../src/api";
 import { ANDROID_CHANNEL_ID, API_BASE, LAST_SEEN_KEY, POLL_SECS } from "../src/config";
 
+if (Platform.OS === "web" && typeof window !== "undefined") {
+  window.addEventListener("unhandledrejection", (e) => {
+    const msg = String(e?.reason?.message || e?.reason || "");
+    if (msg.includes("Unable to activate keep awake")) {
+      e.preventDefault(); // swallow error keep-awake di web
+    }
+  });
+}
 // util
 function ymdTodayLocal() {
   const now = new Date();
@@ -133,6 +141,8 @@ export default function Layout() {
         <Stack.Screen name="index" options={{ title: "Menu Utama" }} />
         <Stack.Screen name="work-order-utama" options={{ title: "Work Order Utama" }} />
         <Stack.Screen name="work-order-tambahan" options={{ title: "Work Order Tambahan" }} />
+        <Stack.Screen name="work-order-pengurangan" options={{ title: "Work Order Pengurangan" }} />
+
         {/* ✅ tambahkan route hasil-divisi */}
         <Stack.Screen name="hasil-giling" options={{ title: "Hasil Divisi" }} />
       </Stack>

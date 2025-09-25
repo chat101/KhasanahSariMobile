@@ -40,7 +40,8 @@ import {
   POLL_SECS,
 } from "../src/config";
 import { registerAndUploadPushToken } from "../src/notifications/registerToken";
-
+// simpan “last seen” khusus pengurangan (lokal; aman walau belum ada di config)
+const KEY_WO_KRG = "KEY_WO_KRG";
 /* ===== Theme: Tokopedia-ish ===== */
 const COLORS = {
   bgTop: "#F2FBF4",
@@ -109,6 +110,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   logoutText: { color: "#fff", fontWeight: "800" },
+    logoutGrad: {
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+        shadowColor: "#ef4444",
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 6 },
+        elevation: 3,
+        minWidth: 120,
+        alignItems: "center",
+      },
+      logoutContent: { flexDirection: "row", alignItems: "center", gap: 8, justifyContent: "center" },
 
   /* === Carousel === */
   carouselWrap: {
@@ -196,6 +210,16 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 0.2,
   },
+
+  catIconWrapPressed: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  catTextPressed: {
+    color: COLORS.text,
+    fontWeight: "800",
+  },
+  
 
   /* Utility */
   center: { justifyContent: "center", alignItems: "center" },
@@ -331,8 +355,10 @@ function AutoCarousel({ slides, refreshing = false, onRefresh }) {
 
 function HapticPressable({ onPress, children, style, androidRipple, ...rest }) {
   const scale = useRef(new Animated.Value(1)).current;
+  const [pressed, setPressed] = useState(false);
 
   const pressIn = () => {
+    setPressed(true);
     Animated.spring(scale, {
       toValue: 0.96,
       useNativeDriver: true,
@@ -342,6 +368,7 @@ function HapticPressable({ onPress, children, style, androidRipple, ...rest }) {
   };
 
   const pressOut = () => {
+    setPressed(false);
     Animated.spring(scale, {
       toValue: 1,
       useNativeDriver: true,
@@ -353,7 +380,6 @@ function HapticPressable({ onPress, children, style, androidRipple, ...rest }) {
   const handlePress = async () => {
     try {
       if (Platform.OS !== "web") {
-        // Medium = terasa tapi tidak berlebihan; boleh ganti ke .Light / .Heavy
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
     } catch {}
@@ -366,10 +392,12 @@ function HapticPressable({ onPress, children, style, androidRipple, ...rest }) {
         onPressIn={pressIn}
         onPressOut={pressOut}
         onPress={handlePress}
+        onHoverIn={() => Platform.OS === "web" && setPressed(true)}
+        onHoverOut={() => Platform.OS === "web" && setPressed(false)}
         android_ripple={androidRipple ?? { color: "#E7F3E9", borderless: true }}
         {...rest}
       >
-        {children}
+        {typeof children === "function" ? children({ pressed }) : children}
       </Pressable>
     </Animated.View>
   );
@@ -387,43 +415,95 @@ function CategoryGrid({ items }) {
             onPress={it.onPress || (() => {})}
             style={styles.catItem}
           >
-            <View style={styles.catIconWrap}>
-              {!!it.badge && (
+            {({ pressed }) => (
+              <>
                 <View
                   style={[
-                    styles.catBadge,
-                    {
-                      backgroundColor: it.badgePink
-                        ? COLORS.badgePink
-                        : COLORS.badgeGreen,
-                    },
+                    styles.catIconWrap,
+                    pressed && styles.catIconWrapPressed,
                   ]}
                 >
-                  <Text style={styles.catBadgeTxt} numberOfLines={1}>
-                    {it.badge}
-                  </Text>
+                  {!!it.badge && (
+                    <View
+                      style={[
+                        styles.catBadge,
+                        {
+                          backgroundColor: it.badgeColor ?? (it.badgePink ? COLORS.badgePink : COLORS.badgeGreen),
+                        },
+                      ]}
+                    >
+                      <Text style={styles.catBadgeTxt} numberOfLines={1}>
+                        {it.badge}
+                      </Text>
+                    </View>
+                  )}
+
+                  <Ionicons
+                    name={it.icon}
+                    size={26}
+                    color={pressed ? "#FFFFFF" : COLORS.primary}
+                  />
                 </View>
-              )}
-              <Ionicons name={it.icon} size={24} color={COLORS.primary} />
-            </View>
-            <Text style={styles.catText} numberOfLines={1}>
-              {it.label}
-            </Text>
+
+                <Text
+                  style={[styles.catText, pressed && styles.catTextPressed]}
+                  numberOfLines={1}
+                >
+                  {it.label}
+                </Text>
+              </>
+            )}
           </HapticPressable>
         ))}
       </View>
     </View>
   );
 }
-
+function LogoutButton({ onPress, loading = false }) {
+    const scale = useRef(new Animated.Value(1)).current;
+    const pressIn  = () => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true }).start();
+    const pressOut = () => Animated.spring(scale, { toValue: 1,    useNativeDriver: true }).start();
+  
+    return (
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <Pressable
+          onPressIn={pressIn}
+          onPressOut={pressOut}
+          onPress={onPress}
+          disabled={loading}
+          android_ripple={{ color: "#fecaca" }}
+          style={{ borderRadius: 12, overflow: "hidden" }}
+        >
+          <LinearGradient
+            colors={["#f87171", "#ef4444", "#dc2626"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.logoutGrad}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <View style={styles.logoutContent}>
+                <Ionicons name="log-out-outline" size={18} color="#fff" />
+                <Text style={styles.logoutText}>Logout</Text>
+              </View>
+            )}
+          </LinearGradient>
+        </Pressable>
+      </Animated.View>
+    );
+  }
+  
 export default function HomeScreen() {
   const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
   const [utamaRows, setUtamaRows] = useState(0);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState("");
   const [name, setName] = useState("");
   const [hasNewUtama, setHasNewUtama] = useState(false);
   const [maxTambahan, setMaxTambahan] = useState(0);
+  const [maxPengurangan, setMaxPengurangan] = useState(0);
   const pollRef = useRef(null);
 
   //slide
@@ -457,6 +537,8 @@ export default function HomeScreen() {
       return ["adminproduksi", "leaderproduksi"].includes(r);
     if (key === "work-order-tambahan")
       return ["adminproduksi", "leaderproduksi", "admin"].includes(r);
+      if (key === "work-order-pengurangan")
+          return ["adminproduksi", "leaderproduksi", "admin"].includes(r);
     if (key === "selesai-divisi")
       return ["adminproduksi", "leaderproduksi", "gudang"].includes(r);
     if (key === "hasil-giling")
@@ -544,6 +626,74 @@ export default function HomeScreen() {
     router.push("/work-order-tambahan");
   }
 
+  async function goPenguranganAndStop() {
+      try {
+        const token = await AsyncStorage.getItem(KEY_TOKEN);
+        if (token) {
+          const today = ymd();
+          const res = await fetch(
+            `${API_BASE}/api/pengurangan/max?tanggal=${today}`,
+            { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } }
+          );
+          if (res.ok) {
+            const j = await res.json();
+            const maxKe = j?.pengurangan_ke ?? 0;
+            await AsyncStorage.setItem(KEY_WO_KRG, `${j.date}|max=${maxKe}`);
+          }
+        }
+        const existing = await AsyncStorage.getItem("notif-wo-pengurangan");
+        if (existing) {
+          try { await Notifications.cancelScheduledNotificationAsync(existing); } catch {}
+          await AsyncStorage.removeItem("notif-wo-pengurangan");
+        }
+      } catch {}
+      router.push("/work-order-pengurangan");
+    }
+
+
+      const handleLogout = useCallback(() => {
+          Alert.alert(
+            "Keluar akun?",
+            "Anda yakin ingin logout dari aplikasi ini?",
+            [
+              { text: "Batal", style: "cancel" },
+              {
+                text: "Logout",
+                style: "destructive",
+                onPress: async () => {
+                  try {
+                    setLoggingOut(true);
+                    try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
+      
+                    const token = await AsyncStorage.getItem(KEY_TOKEN);
+                    if (token) {
+                      await fetch(`${API_BASE}/api/auth/logout`, {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+                      }).catch(() => {});
+                    }
+                    await AsyncStorage.multiRemove([
+                      KEY_TOKEN,
+                      KEY_USER,
+                      KEY_WO_UT,
+                      KEY_WO_TMB,
+                      KEY_WO_KRG,
+                      "notif-wo-utama",
+                      "notif-wo-tambahan",
+                      "notif-wo-pengurangan",
+                    ]);
+                    router.replace("/login");
+                  } catch (e) {
+                    Alert.alert("Error", String(e.message || e));
+                  } finally {
+                    setLoggingOut(false);
+                  }
+                },
+              },
+            ]
+          );
+        }, [router]);
+      
   // === Kategori utama (dengan badge notifikasi) ===
   const categories = useMemo(() => {
     const list = [
@@ -552,7 +702,7 @@ export default function HomeScreen() {
         label: "WO Utama",
         icon: "clipboard-outline",
         onPress: markUtamaSeenAndGo,
-        badge: utamaRows > 0 ? "BARU" : undefined,
+        badge: hasNewUtama ? "BARU" : undefined,
         badgePink: true,
       },
       allowed("work-order-tambahan") && {
@@ -562,6 +712,14 @@ export default function HomeScreen() {
         onPress: goTambahanAndStop,
         badge: maxTambahan > 0 ? `Max ${maxTambahan}` : undefined,
         badgePink: true,
+      },
+      allowed("work-order-pengurangan") && {
+        key: "wo_krg",
+        label: "WO Pengurangan",
+        icon: "cube-outline",
+        onPress: goPenguranganAndStop,
+        badge: maxPengurangan > 0 ? `Max ${maxPengurangan}` : undefined,
+        badgeColor: "#3B82F6", // biru opsional
       },
       allowed("selesai-divisi") && {
         key: "selesai",
@@ -581,7 +739,7 @@ export default function HomeScreen() {
         icon: "document-text-outline",
         onPress: () => {},
       },
-      { key: "gud", label: "Gudang", icon: "cube-outline", onPress: () => {} },
+      // { key: "gud", label: "Gudang", icon: "cube-outline", onPress: () => {} },
       {
         key: "scan",
         label: "Scan",
@@ -594,9 +752,10 @@ export default function HomeScreen() {
         icon: "settings-outline",
         onPress: () => {},
       },
-    ].filter(Boolean);
+  
+      ].filter(Boolean);
     return list.slice(0, 8);
-  }, [role, hasNewUtama, maxTambahan, utamaRows]);
+  }, [role, hasNewUtama, maxTambahan, maxPengurangan, utamaRows]);
   //slide
   const fetchSlides = useCallback(async () => {
     try {
@@ -659,11 +818,12 @@ export default function HomeScreen() {
         Accept: "application/json",
       };
 
-      const [resUt, resTmb] = await Promise.all([
+      const [resUt, resTmb, resKrg] = await Promise.all([
         fetch(`${API_BASE}/api/produks/utama?tanggal=${today}`, { headers }),
         fetch(`${API_BASE}/api/produks/tambahan-max?tanggal=${today}`, {
           headers,
         }),
+        fetch(`${API_BASE}/api/pengurangan/max?tanggal=${today}`, { headers }),
       ]);
 
       if (!resUt.ok) throw new Error(`utama HTTP ${resUt.status}`);
@@ -695,6 +855,21 @@ export default function HomeScreen() {
             "wo-tambahan",
             "Perintah Tambahan Terbaru",
             `Tanggal ${jtb.date}, tambahan ke-${maxKe}`
+          );
+        }
+      }
+      
+      if (resKrg.ok) {
+        const jkrg = await resKrg.json();
+        const maxKeKrg = jkrg?.pengurangan_ke ?? 0;
+        setMaxPengurangan(maxKeKrg);
+        const nowKeyKrg = `${jkrg.date}|max=${maxKeKrg}`;
+        const seenKrg = (await AsyncStorage.getItem(KEY_WO_KRG)) || "";
+        if (maxKeKrg > 0 && nowKeyKrg !== seenKrg) {
+          await scheduleRepeatingReminder(
+            "wo-pengurangan",
+            "Pengurangan Produksi Terbaru",
+            `Tanggal ${jkrg.date}, pengurangan ke-${maxKeKrg}`
           );
         }
       }
@@ -755,6 +930,11 @@ export default function HomeScreen() {
             await checkOverview();
           } catch {}
         }
+                if (data.type === "wo_pengurangan_created") {
+                    const ke = Number(data.ke || 0);
+                    if (ke > 0) setMaxPengurangan(ke);
+                    try { await checkOverview(); } catch {}
+                  }
       }
     );
     return () => subRecv.remove();
@@ -772,8 +952,10 @@ export default function HomeScreen() {
   if (loading) {
     return (
       <LinearGradient
-        colors={[COLORS.bgTop, COLORS.bgBottom]}
-        style={[styles.container, styles.center]}
+      colors={["#E6F9EC", "#FFFFFF"]} // hijau muda → putih halus
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={styles.container}
       >
         <StatusBar barStyle="dark-content" />
         <ActivityIndicator size="large" />
@@ -833,36 +1015,7 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <Pressable
-              style={styles.logoutBtn}
-              onPress={async () => {
-                try {
-                  const token = await AsyncStorage.getItem(KEY_TOKEN);
-                  if (token) {
-                    await fetch(`${API_BASE}/api/auth/logout`, {
-                      method: "POST",
-                      headers: {
-                        Authorization: `Bearer ${token}`,
-                        Accept: "application/json",
-                      },
-                    }).catch(() => {});
-                  }
-                  await AsyncStorage.multiRemove([
-                    KEY_TOKEN,
-                    KEY_USER,
-                    KEY_WO_UT,
-                    KEY_WO_TMB,
-                    "notif-wo-utama",
-                    "notif-wo-tambahan",
-                  ]);
-                  router.replace("/login");
-                } catch (e) {
-                  Alert.alert("Error", String(e.message || e));
-                }
-              }}
-            >
-              <Text style={styles.logoutText}>Logout</Text>
-            </Pressable>
+            <LogoutButton onPress={handleLogout} loading={loggingOut} />
           </View>
 
           {/* SLIDER */}
