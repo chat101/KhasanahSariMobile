@@ -2,6 +2,7 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import React, {
   useCallback,
@@ -14,6 +15,8 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -26,6 +29,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -109,7 +113,8 @@ export default function HasilDivisiScreen() {
   const [rejOpenId, setRejOpenId] = useState(null);
   const [rejProdName, setRejProdName] = useState("");
   const [rejForm, setRejForm] = useState({ qty: "", note: "" });
-
+  const [rejPhoto, setRejPhoto] = useState(null); // uri foto (opsional)
+  const [camPerm, requestCamPerm] = ImagePicker.useCameraPermissions();
   // --- List reject (master + UI)
   const [listRejects, setListRejects] = useState([]); // [{id, keterangan}]
   const [listOpen, setListOpen] = useState(false);
@@ -530,7 +535,56 @@ export default function HasilDivisiScreen() {
     setRejOpenId(item.mproducts_id);
     setRejProdName(item.product_name || "");
     setRejForm({ qty: "", note: "" });
+    setRejPhoto(null);
   }, []);
+
+  const takeRejectPhoto = React.useCallback(async () => {
+    try {
+      Keyboard.dismiss();
+
+      // 1) izin kamera
+      let granted = camPerm?.granted;
+      if (!granted) {
+        const r = await requestCamPerm();
+        granted = !!r?.granted;
+      }
+      if (!granted) {
+        Alert.alert(
+          "Izin Kamera",
+          "Aktifkan izin kamera untuk mengambil foto."
+        );
+        return;
+      }
+
+      // 2) opsi aman
+      const opts = {
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.7,
+        cameraType: ImagePicker.CameraType.back,
+      };
+
+      // 3) web fallback: di web, camera biasanya jatuh ke file picker
+      const result =
+        Platform.OS === "web"
+          ? await ImagePicker.launchImageLibraryAsync({ ...opts })
+          : await ImagePicker.launchCameraAsync(opts);
+
+      if (result?.canceled) return;
+      const asset = result?.assets?.[0];
+      if (asset?.uri) setRejPhoto(asset.uri);
+    } catch (e) {
+      const msg = String(e?.message || e);
+      // 4) fallback bila native modul belum ada (dev client belum rebuild)
+      if (/ExponentImagePicker|Native module.*ImagePicker/i.test(msg)) {
+        try {
+          router.push("/camera");
+          return;
+        } catch {}
+      }
+      Alert.alert("Kamera", msg);
+    }
+  }, [camPerm, requestCamPerm, router]);
 
   useEffect(() => {
     if (rejOpenId && perintahId) {
@@ -542,6 +596,7 @@ export default function HasilDivisiScreen() {
     setRejOpenId(null);
     setRejProdName("");
     setRejForm({ qty: "", note: "" });
+    setRejPhoto(null);
   };
 
   // saat modal terbuka: muat list + reset pilihan
@@ -1008,7 +1063,7 @@ export default function HasilDivisiScreen() {
           <Text style={s.modalSubTitle}>
             {rejProdName || `Produk #${rejOpenId ?? ""}`}
           </Text>
-  
+
           {/* ==== FORM (dibungkus KAV hanya di iOS) ==== */}
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -1016,23 +1071,37 @@ export default function HasilDivisiScreen() {
           >
             <View>
               <Text style={s.fieldLabel}>Jumlah</Text>
-              <TextInput
-                style={s.modalInput}
-                placeholder="0"
-                keyboardType="numeric"
-                value={rejForm.qty}
-                onChangeText={(t) =>
-                  setRejForm((f) => ({ ...f, qty: t.replace(/\D+/g, "") }))
-                }
-              />
-  
+              <View style={s.rowInputWithBtn}>
+                <TextInput
+                  style={[s.modalInput, { flex: 1, marginRight: 8 }]}
+                  placeholder="0"
+                  keyboardType="numeric"
+                  value={rejForm.qty}
+                  onChangeText={(t) =>
+                    setRejForm((f) => ({ ...f, qty: t.replace(/\D+/g, "") }))
+                  }
+                />
+                {rejPhoto ? (
+                  <Image source={{ uri: rejPhoto }} style={s.photoThumb} />
+                ) : null}
+
+                <Pressable
+                  onPress={takeRejectPhoto}
+                  style={s.cameraBtn}
+                  android_ripple={{ color: "#E5E7EB", borderless: true }}
+                >
+                  <Ionicons name="camera-outline" size={18} color="#111827" />
+                  {/* badge kecil hijau kalau sudah ada foto */}
+                  {rejPhoto ? <View style={s.camBadge} /> : null}
+                </Pressable>
+              </View>
               {/* Jenis Reject – trigger modal list */}
               <Text style={[s.fieldLabel, { marginTop: 10 }]}>
                 Jenis Reject <Text style={{ color: COLORS.danger }}>*</Text>
               </Text>
               <Pressable
                 onPress={() => {
-                  Keyboard.dismiss();      // ← tutup keyboard agar tidak memicu relayout besar
+                  Keyboard.dismiss(); // ← tutup keyboard agar tidak memicu relayout besar
                   setListOpen(true);
                 }}
                 style={[
@@ -1045,7 +1114,9 @@ export default function HasilDivisiScreen() {
                   },
                 ]}
               >
-                <Text style={{ color: selectedList ? COLORS.text : COLORS.sub }}>
+                <Text
+                  style={{ color: selectedList ? COLORS.text : COLORS.sub }}
+                >
                   {selectedList
                     ? selectedList.keterangan
                     : listLoading
@@ -1055,11 +1126,13 @@ export default function HasilDivisiScreen() {
                 <Ionicons name="chevron-down" size={16} color={COLORS.sub} />
               </Pressable>
               {listError && (
-                <Text style={{ color: COLORS.danger, fontSize: 11, marginTop: 4 }}>
+                <Text
+                  style={{ color: COLORS.danger, fontSize: 11, marginTop: 4 }}
+                >
                   Jenis reject wajib dipilih.
                 </Text>
               )}
-  
+
               <Text style={s.fieldLabel}>Keterangan</Text>
               <TextInput
                 style={[s.modalInput, { height: 84, textAlignVertical: "top" }]}
@@ -1068,14 +1141,14 @@ export default function HasilDivisiScreen() {
                 value={rejForm.note}
                 onChangeText={(t) => setRejForm((f) => ({ ...f, note: t }))}
               />
-  
+
               <Pressable style={s.saveBtn} onPress={saveReject}>
                 <Ionicons name="save-outline" size={16} color="#fff" />
                 <Text style={s.saveBtnTxt}>Simpan</Text>
               </Pressable>
             </View>
           </KeyboardAvoidingView>
-  
+
           {/* ==== HISTORY LIST (DI LUAR KAV -> no flicker) ==== */}
           <View style={{ marginTop: 10, maxHeight: 320 }}>
             <FlatList
@@ -1083,22 +1156,31 @@ export default function HasilDivisiScreen() {
               keyExtractor={(_, idx) => String(idx)}
               ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
               keyboardShouldPersistTaps="handled"
-              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+              keyboardDismissMode={
+                Platform.OS === "ios" ? "interactive" : "on-drag"
+              }
               nestedScrollEnabled
-              removeClippedSubviews={false}     // ← penting untuk cegah blink di Android
+              removeClippedSubviews={false} // ← penting untuk cegah blink di Android
               ListEmptyComponent={
-                <Text style={s.emptySmall}>Belum ada reject untuk item ini.</Text>
+                <Text style={s.emptySmall}>
+                  Belum ada reject untuk item ini.
+                </Text>
               }
               renderItem={({ item, index }) => (
                 <View style={s.rejRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={s.rejName}>Jumlah: {fmt(item.qty, 0)}</Text>
                     {!!item.listreject_name && (
-                      <Text style={s.rejNote}>Jenis: {item.listreject_name}</Text>
+                      <Text style={s.rejNote}>
+                        Jenis: {item.listreject_name}
+                      </Text>
                     )}
                     {!!item.note && <Text style={s.rejNote}>{item.note}</Text>}
                   </View>
-                  <Pressable style={s.rejDelBtn} onPress={() => removeReject(index)}>
+                  <Pressable
+                    style={s.rejDelBtn}
+                    onPress={() => removeReject(index)}
+                  >
                     <Ionicons name="trash-outline" size={18} color="#B91C1C" />
                   </Pressable>
                 </View>
@@ -1109,103 +1191,103 @@ export default function HasilDivisiScreen() {
       </View>
     </Modal>
   );
-/* ===== Modal Dropdown List Reject (terpisah) ===== */
-const ListRejectModal = (
-  <Modal
-    visible={listOpen}
-    transparent
-    animationType="fade"
-    onRequestClose={() => setListOpen(false)}
-    statusBarTranslucent
-  >
-    <Pressable
-      style={{
-        flex: 1,
-        backgroundColor: "rgba(0,0,0,0.35)",
-        paddingTop: insets.top + MODAL_TOP, // sejajar dgn modal atas
-      }}
-      onPress={() => setListOpen(false)}
+  /* ===== Modal Dropdown List Reject (terpisah) ===== */
+  const ListRejectModal = (
+    <Modal
+      visible={listOpen}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setListOpen(false)}
+      statusBarTranslucent
     >
-      <View
+      <Pressable
         style={{
-          marginHorizontal: 20,
-          backgroundColor: "#fff",
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: BORDER,
-          maxHeight: 420,
-          overflow: "hidden",
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.35)",
+          paddingTop: insets.top + MODAL_TOP, // sejajar dgn modal atas
         }}
+        onPress={() => setListOpen(false)}
       >
         <View
           style={{
-            paddingHorizontal: 12,
-            paddingVertical: 10,
-            borderBottomWidth: 1,
-            borderBottomColor: BORDER,
-            backgroundColor: "#F8FAFC",
+            marginHorizontal: 20,
+            backgroundColor: "#fff",
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: BORDER,
+            maxHeight: 420,
+            overflow: "hidden",
           }}
         >
-          <Text style={{ fontWeight: "900", color: COLORS.text }}>
-            Pilih Jenis Reject
-          </Text>
-        </View>
-
-        {listLoading ? (
-          <View style={{ padding: 16, alignItems: "center" }}>
-            <ActivityIndicator />
-            <Text style={{ marginTop: 6, color: COLORS.sub, fontSize: 12 }}>
-              Memuat daftar...
+          <View
+            style={{
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              borderBottomWidth: 1,
+              borderBottomColor: BORDER,
+              backgroundColor: "#F8FAFC",
+            }}
+          >
+            <Text style={{ fontWeight: "900", color: COLORS.text }}>
+              Pilih Jenis Reject
             </Text>
           </View>
-        ) : listRejects.length ? (
-          <ScrollView
-            style={{ maxHeight: 360 }}
-            keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled
-            showsVerticalScrollIndicator
-          >
-            {listRejects.map((item) => {
-              const active = selectedList?.id === item.id;
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => {
-                    setSelectedList(item);
-                    setListError(false);
-                    setListOpen(false);
-                  }}
-                  style={{
-                    paddingVertical: 12,
-                    paddingHorizontal: 12,
-                    borderBottomWidth: 1,
-                    borderBottomColor: BORDER,
-                    backgroundColor: active ? "#F1F5F9" : "#fff",
-                  }}
-                >
-                  <Text
+
+          {listLoading ? (
+            <View style={{ padding: 16, alignItems: "center" }}>
+              <ActivityIndicator />
+              <Text style={{ marginTop: 6, color: COLORS.sub, fontSize: 12 }}>
+                Memuat daftar...
+              </Text>
+            </View>
+          ) : listRejects.length ? (
+            <ScrollView
+              style={{ maxHeight: 360 }}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+            >
+              {listRejects.map((item) => {
+                const active = selectedList?.id === item.id;
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => {
+                      setSelectedList(item);
+                      setListError(false);
+                      setListOpen(false);
+                    }}
                     style={{
-                      color: COLORS.text,
-                      fontWeight: active ? "800" : "400",
+                      paddingVertical: 12,
+                      paddingHorizontal: 12,
+                      borderBottomWidth: 1,
+                      borderBottomColor: BORDER,
+                      backgroundColor: active ? "#F1F5F9" : "#fff",
                     }}
                   >
-                    {item.keterangan}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        ) : (
-          <View style={{ padding: 16 }}>
-            <Text style={{ color: COLORS.sub, fontSize: 12 }}>
-              Daftar kosong.
-            </Text>
-          </View>
-        )}
-      </View>
-    </Pressable>
-  </Modal>
-);
+                    <Text
+                      style={{
+                        color: COLORS.text,
+                        fontWeight: active ? "800" : "400",
+                      }}
+                    >
+                      {item.keterangan}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : (
+            <View style={{ padding: 16 }}>
+              <Text style={{ color: COLORS.sub, fontSize: 12 }}>
+                Daftar kosong.
+              </Text>
+            </View>
+          )}
+        </View>
+      </Pressable>
+    </Modal>
+  );
 
   return (
     <SafeAreaView
@@ -1542,6 +1624,41 @@ const s = StyleSheet.create({
     fontSize: 13,
     color: COLORS.text,
   },
+  rowInputWithBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  cameraBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: "#F8FAFC",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  camBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#16A34A",
+  },
+  photoThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+
   saveBtn: {
     marginTop: 8,
     flexDirection: "row",
