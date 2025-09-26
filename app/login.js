@@ -37,10 +37,34 @@ export default function LoginScreen() {
         method: "POST",
         body: JSON.stringify({ login, password, device_name: "expo-app" }),
       });
-
-      await AsyncStorage.setItem(KEY_TOKEN, json.token);
-      await AsyncStorage.setItem(KEY_USER, JSON.stringify(json.user || {}));
-      router.replace("/");
+  
+      // Debug: lihat bentuk respons-nya
+      console.log("Login response:", json);
+  
+      // Ambil token dari beberapa kemungkinan path
+      const rawToken =
+        json?.token ??
+        json?.access_token ??
+        json?.data?.token ??
+        json?.data?.access_token ??
+        null;
+  
+      // Pastikan string
+      const token = typeof rawToken === "string" ? rawToken : (rawToken != null ? String(rawToken) : null);
+  
+      if (token && token.trim().length > 0) {
+        await AsyncStorage.setItem(KEY_TOKEN, token);
+        await AsyncStorage.setItem(KEY_USER, JSON.stringify(json.user ?? json.data?.user ?? {}));
+        router.replace("/");
+      } else {
+        // Jangan setItem dengan undefined/null → hapus saja biar bersih
+        await AsyncStorage.removeItem(KEY_TOKEN);
+        await AsyncStorage.removeItem(KEY_USER);
+        Alert.alert(
+          "Login gagal",
+          "Token tidak ditemukan pada respons server. Silakan coba lagi atau hubungi admin."
+        );
+      }
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === "NETWORK_ERROR" || e.code === "TIMEOUT") {
@@ -77,6 +101,7 @@ export default function LoginScreen() {
       setBusy(false);
     }
   };
+  
 
   return (
     <KeyboardAvoidingView 
