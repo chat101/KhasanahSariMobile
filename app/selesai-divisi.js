@@ -59,6 +59,7 @@ const COLORS = {
   primary: "#03AC0E",
   primaryDark: "#1F7A28",
   info: "#0284C7",
+  textLight: "#6B7280",
   violet: "#7C3AED",
   danger: "#EF4444",
 };
@@ -69,8 +70,8 @@ export default function SelesaiDivisi({ route }) {
 
   // Lebar kolom (compact & responsif)
   const COLS = useMemo(() => {
-    if (width < 360) return { nama: 140, jam: 80, ket: 160, aksi: 88 };
-    if (width < 400) return { nama: 160, jam: 90, ket: 180, aksi: 96 };
+    if (width < 360) return { nama: 110, jam: 80, ket: 160, aksi: 88 };
+    if (width < 400) return { nama: 130, jam: 90, ket: 180, aksi: 96 };
     return { nama: 180, jam: 100, ket: 220, aksi: 104 };
   }, [width]);
 
@@ -245,7 +246,7 @@ export default function SelesaiDivisi({ route }) {
         },
 
         // Kolom
-        colNama: { width: COLS.nama },
+        colNama: { width: COLS.nama, fontSize:12 },
         colTime: { width: M.colTimeW },
         colKet: { width: COLS.ket, minWidth: M.colKetMin },
         colAksi: { width: M.colAksiW, alignItems: "stretch" },
@@ -262,6 +263,9 @@ export default function SelesaiDivisi({ route }) {
           color: COLORS.text,
         },
         timeBtn: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
           backgroundColor: COLORS.card,
           borderWidth: 1,
           borderColor: BORDER,
@@ -771,6 +775,7 @@ export default function SelesaiDivisi({ route }) {
                           style={s.timeBtn}
                           onPress={() => openTimePickerForGroup(gkey)}
                         >
+                             <Ionicons name="time-outline" size={14} color={COLORS.textLight} />
                           <Text style={s.timeText}>
                             {toHHMMString(jamSelesaiGroup[gkey]) || "Pilih"}
                           </Text>
@@ -822,6 +827,7 @@ export default function SelesaiDivisi({ route }) {
                         style={s.timeBtn}
                         onPress={() => openTimePickerForRow(jobId)}
                       >
+                        <Ionicons name="time-outline" size={14} color={COLORS.textLight} />
                         <Text style={s.timeText}>
                           {toHHMMString(jamSelesai[jobId]) || "Pilih"}
                         </Text>
