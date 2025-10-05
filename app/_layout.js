@@ -145,6 +145,8 @@ export default function Layout() {
 
         {/* ✅ tambahkan route hasil-divisi */}
         <Stack.Screen name="hasil-giling" options={{ title: "Hasil Divisi" }} />
+        <Stack.Screen name="hasil-giling-admin" options={{ title: "Hasil Divisi Admin" }} />
+
       </Stack>
     </SafeAreaProvider>
   );

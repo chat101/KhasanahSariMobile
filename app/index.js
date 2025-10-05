@@ -542,7 +542,9 @@ export default function HomeScreen() {
     if (key === "selesai-divisi")
       return ["adminproduksi", "leaderproduksi", "gudang"].includes(r);
     if (key === "hasil-giling")
-      return ["adminproduksi", "leaderproduksi", "gudang"].includes(r);
+      return ["leaderproduksi", "gudang"].includes(r);
+    if (key === "hasil-giling-admin")
+      return ["adminproduksi" ].includes(r);
     return false;
   };
 
@@ -695,7 +697,11 @@ export default function HomeScreen() {
         }, [router]);
       
   // === Kategori utama (dengan badge notifikasi) ===
-  const categories = useMemo(() => {
+
+     const categories = useMemo(() => {
+          const canHasilAdmin = allowed("hasil-giling-admin");     // adminproduksi (dan admin super)
+          const canHasilNonAdmin = allowed("hasil-giling");        // leaderproduksi, gudang
+         const showHasil = canHasilAdmin || canHasilNonAdmin;
     const list = [
       allowed("work-order-utama") && {
         key: "wo_utama",
@@ -727,11 +733,13 @@ export default function HomeScreen() {
         icon: "time-outline",
         onPress: () => router.push("/selesai-divisi"),
       },
-      allowed("hasil-giling") && {
+            showHasil && {
         key: "hasil",
         label: "Hasil",
         icon: "pie-chart-outline",
-        onPress: () => router.push("/hasil-giling"),
+                onPress: () => router.push(
+                    canHasilAdmin ? "/hasil-giling-admin" : "/hasil-giling"
+                  ),
       },
       {
         key: "lap",
@@ -755,7 +763,7 @@ export default function HomeScreen() {
   
       ].filter(Boolean);
     return list.slice(0, 8);
-  }, [role, hasNewUtama, maxTambahan, maxPengurangan, utamaRows]);
+  }, [role, hasNewUtama, maxTambahan, maxPengurangan, utamaRows, router]);
   //slide
   const fetchSlides = useCallback(async () => {
     try {
