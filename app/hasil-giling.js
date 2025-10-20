@@ -35,6 +35,42 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { API_BASE, KEY_TOKEN, KEY_USER } from "../src/config";
+/* ===== Upload Foto Reject (multipart) ===== */
+async function uploadRejectPhoto(hasilRejectId, photoUri, base, token) {
+  if (!hasilRejectId || !photoUri) return null;
+
+  const form = new FormData();
+
+  // deteksi nama & mime sederhana
+  const filename = (photoUri.split("/").pop() || `reject_${Date.now()}.jpg`);
+  const ext = filename.split(".").pop()?.toLowerCase();
+  const mime =
+    ext === "png" ? "image/png" :
+    ext === "webp" ? "image/webp" :
+    ext === "heic" ? "image/heic" :
+    "image/jpeg";
+
+  form.append("hasil_reject_id", String(hasilRejectId));
+  form.append("photo", {
+    uri: photoUri,
+    name: filename,
+    type: mime,
+  });
+
+  // PENTING: jangan set Content-Type manual; biar React Native yg set boundary
+  const r = await fetch(`${base}/api/rejects/photos`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+    body: form,
+  });
+
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
+  return j?.data ?? j;
+}
 
 /* ===== cache helper: simpan field user ke KEY_USER (merge) ===== */
 async function cacheUserPatch(patch) {
@@ -613,25 +649,23 @@ export default function HasilDivisiScreen() {
     const qty = Number((rejForm.qty || "").toString().replace(/\D+/g, "")) || 0;
     const note = String(rejForm.note || "").trim();
     if (!rejOpenId) return;
-
+  
     if (qty <= 0) {
       Alert.alert("Validasi", "Jumlah harus lebih dari 0.");
       return;
     }
-
-    // wajib pilih jenis reject
     if (!selectedList?.id) {
       setListError(true);
       Alert.alert("Validasi", "Pilih jenis reject terlebih dahulu.");
       return;
     }
     setListError(false);
-
+  
     const token = await AsyncStorage.getItem(KEY_TOKEN);
     const dId = await ensureProfile(token);
     const listId = selectedList.id;
-
-    // optimistic
+  
+    // Optimistic UI
     setRejects((p) => {
       const key = String(rejOpenId);
       const cur = p[key] || [];
@@ -639,21 +673,15 @@ export default function HasilDivisiScreen() {
         ...p,
         [key]: [
           ...cur,
-          {
-            qty,
-            note,
-            listreject_id: listId,
-            listreject_name: selectedList?.keterangan || "",
-          },
+          { qty, note, listreject_id: listId, listreject_name: selectedList?.keterangan || "" },
         ],
       };
     });
-    setRejForm({ qty: "", note: "" });
-    setSelectedList(null);
-    setListOpen(false);
-
+  
     try {
       if (!token || !perintahId) return;
+  
+      // 1) simpan reject item
       const r = await fetch(`${base}/api/rejects`, {
         method: "POST",
         headers: {
@@ -668,26 +696,61 @@ export default function HasilDivisiScreen() {
           items: [{ qty, note, listreject_id: listId }],
         }),
       });
+  
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
-
+  
+      // 2) pastikan kita punya id hasil_reject yang baru
+      let createdId = j?.data?.items?.[0]?.id ?? j?.data?.id ?? j?.id ?? null;
+  
+      // kalau tidak ada di response -> ambil lagi history item ini lalu cari baris yang baru dibuat
+      if (!createdId) {
+        const q = new URLSearchParams({
+          perintah_id: String(perintahId),
+          mproducts_id: String(rejOpenId),
+          ...(dId != null ? { divisi_id: String(dId) } : {}),
+        }).toString();
+  
+        const r2 = await fetch(`${base}/api/rejects?${q}`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        });
+        const j2 = await r2.json().catch(() => ({}));
+        const arr = Array.isArray(j2?.data) ? j2.data : [];
+  
+        // cari dari belakang dengan signature qty/note/listreject_id yg sama
+        const found = [...arr].reverse().find(
+          (x) =>
+            Number(x?.qty_reject) === qty &&
+            String(x?.keterangan || "") === note &&
+            (x?.listreject_id == listId)
+        );
+        createdId = found?.id ?? null;
+      }
+  
+      // 3) kalau ada foto & sudah punya id -> upload fotonya (multipart)
+      if (rejPhoto && createdId) {
+        await uploadRejectPhoto(createdId, rejPhoto, base, token);
+      }
+  
+      // 4) refresh ringkasan & history
       await Promise.all([
         loadRejectSummary(perintahId),
         loadRejectHistory(rejOpenId, perintahId),
       ]);
+  
+      // 5) reset form
+      setRejForm({ qty: "", note: "" });
+      setSelectedList(null);
+      setListOpen(false);
+      setRejPhoto(null);
     } catch (e) {
       Alert.alert("Gagal simpan reject", e?.message || String(e));
     }
   }, [
-    rejForm,
-    rejOpenId,
-    base,
-    perintahId,
-    ensureProfile,
-    loadRejectSummary,
-    loadRejectHistory,
-    selectedList,
+    rejForm, rejOpenId, rejPhoto, base, perintahId,
+    ensureProfile, loadRejectSummary, loadRejectHistory, selectedList
   ]);
+  
 
   const removeReject = useCallback(
     async (index) => {

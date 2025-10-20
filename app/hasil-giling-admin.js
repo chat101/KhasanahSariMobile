@@ -1,4 +1,4 @@
-// app/hasil-giling.js
+// app/hasil-giling-admin.js
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -376,14 +376,14 @@ const fetchDivisiMap = useCallback(
 
         if (res.status === 404) {
           setPerintahId(null);
-          setRows([]);
-          setVals({});
-          setRejects({});
-          setRejectSummary({});
-          setRowSaving({});
-          setRowSavedOk({});
-          setLastSaved({});
-          return;
+            setRows([]);
+            setVals({});
+            setRejects({});
+            setRejectSummary({});
+            setRowSaving({});
+            setRowSavedOk({});
+            setLastSaved({});
+            return;
         }
         if (res.status === 401) {
           router.replace("/login");
@@ -819,7 +819,7 @@ const fetchDivisiMap = useCallback(
     <>
       <View style={s.topBar}>
         <Text style={s.title}>
-          Divisi Admin {divisiName || (divisiId != null ? `#${divisiId}` : "—")}
+          Divisi {divisiName || (divisiId != null ? `#${divisiId}` : "—")}
         </Text>
         
 
@@ -909,7 +909,8 @@ const fetchDivisiMap = useCallback(
           </View>
           <View style={s.cardBody}>
             <Text style={s.cardLabel}>Realisasi</Text>
-            <Text style={s.cardValue}>{fmt(totals.realisasi, 0)}</Text>
+            {/* Gunakan total kolom Dekor untuk Realisasi */}
+            <Text style={s.cardValue}>{fmt(totalsExtra.dekor, 0)}</Text>
           </View>
         </View>
         <View style={s.card}>
@@ -917,7 +918,11 @@ const fetchDivisiMap = useCallback(
             <Ionicons
               name="swap-vertical-outline"
               size={20}
-              color={totals.selisih < 0 ? "#B91C1C" : COLORS.primaryDark}
+              color={
+                ((totalsExtra.dekor || 0) - (totals.target_giling || 0)) < 0
+                  ? "#B91C1C"
+                  : COLORS.primaryDark
+              }
             />
           </View>
           <View style={s.cardBody}>
@@ -927,11 +932,16 @@ const fetchDivisiMap = useCallback(
                 s.cardValue,
                 {
                   color:
-                    totals.selisih < 0 ? COLORS.danger : COLORS.primaryDark,
+                    ((totalsExtra.dekor || 0) - (totals.target_giling || 0)) < 0
+                      ? COLORS.danger
+                      : COLORS.primaryDark,
                 },
               ]}
             >
-              {fmt(totals.selisih, 0)}
+              {fmt(
+                (totalsExtra.dekor || 0) - (totals.target_giling || 0),
+                0
+              )}
             </Text>
           </View>
         </View>
