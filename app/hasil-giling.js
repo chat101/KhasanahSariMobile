@@ -42,13 +42,16 @@ async function uploadRejectPhoto(hasilRejectId, photoUri, base, token) {
   const form = new FormData();
 
   // deteksi nama & mime sederhana
-  const filename = (photoUri.split("/").pop() || `reject_${Date.now()}.jpg`);
+  const filename = photoUri.split("/").pop() || `reject_${Date.now()}.jpg`;
   const ext = filename.split(".").pop()?.toLowerCase();
   const mime =
-    ext === "png" ? "image/png" :
-    ext === "webp" ? "image/webp" :
-    ext === "heic" ? "image/heic" :
-    "image/jpeg";
+    ext === "png"
+      ? "image/png"
+      : ext === "webp"
+      ? "image/webp"
+      : ext === "heic"
+      ? "image/heic"
+      : "image/jpeg";
 
   form.append("hasil_reject_id", String(hasilRejectId));
   form.append("photo", {
@@ -149,7 +152,7 @@ export default function HasilDivisiScreen() {
   const [rejOpenId, setRejOpenId] = useState(null);
   const [rejProdName, setRejProdName] = useState("");
   const [rejForm, setRejForm] = useState({ qty: "", note: "" });
-  const [rejPhoto, setRejPhoto] = useState(null); // uri foto (opsional)
+  const [rejPhotos, setRejPhotos] = useState([]); // array uri foto
   const [camPerm, requestCamPerm] = ImagePicker.useCameraPermissions();
   // --- List reject (master + UI)
   const [listRejects, setListRejects] = useState([]); // [{id, keterangan}]
@@ -222,6 +225,278 @@ export default function HasilDivisiScreen() {
       return divisiId;
     },
     [divisiId, divisiName, base]
+  );
+  // --- Pengalihan (mirip Reject tapi untuk transfer ke produk lain)
+  const [pengOpenId, setPengOpenId] = useState(null);
+  const [pengProdName, setPengProdName] = useState("");
+  const [pengForm, setPengForm] = useState({ qty: "", note: "" });
+  const [pengTarget, setPengTarget] = useState(null); // { mproducts_id, product_name }
+  const [pengSummary, setPengSummary] = useState({});
+  const [pengHistory, setPengHistory] = useState({});
+  const [prodListOpen, setProdListOpen] = useState(false);
+  const [produkTujuanList, setProdukTujuanList] = useState([]);
+  const [produkTujuanLoading, setProdukTujuanLoading] = useState(false);
+  const [produkTujuanError, setProdukTujuanError] = useState("");
+  const [produkSearch, setProdukSearch] = useState("");
+
+  
+  const loadProdukTujuanList = useCallback(async () => {
+    try {
+      setProdukTujuanLoading(true);
+      setProdukTujuanError("");
+      const token = tokenRef.current || (await AsyncStorage.getItem(KEY_TOKEN));
+      if (!token) return;
+  
+      // GANTI endpoint di bawah ini sesuai API kamu:
+      // contoh: `${base}/api/products?active=1`
+      const r = await fetch(`${base}/api/products`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
+  
+      const arr = Array.isArray(j?.data) ? j.data : Array.isArray(j) ? j : [];
+      // Normalisasi field -> {mproducts_id, product_name}
+      const norm = arr.map((it) => ({
+        mproducts_id: Number(it.mproducts_id ?? it.id),
+        product_name: String(it.product_name ?? it.nama ?? it.name ?? "-"),
+      }));
+      setProdukTujuanList(norm);
+    } catch (e) {
+      setProdukTujuanError(e?.message || String(e));
+      setProdukTujuanList([]);
+    } finally {
+      setProdukTujuanLoading(false);
+    }
+  }, [base]);
+
+
+  /* ====== Load summary semua pengalihan ====== */
+  const loadPengalihanSummary = useCallback(
+    async (perintahIdArg) => {
+      try {
+        const token =
+          tokenRef.current || (await AsyncStorage.getItem(KEY_TOKEN));
+        if (!token) return;
+        const dId = await ensureProfile(token);
+        const pid = perintahIdArg ?? perintahId;
+        if (!pid) return;
+
+        const q = new URLSearchParams({
+          perintah_id: String(pid),
+          ...(dId ? { divisi_id: String(dId) } : {}),
+        }).toString();
+
+        const r = await fetch(`${base}/api/pengalihan/summary?${q}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        });
+        if (!r.ok) return;
+        const j = await r.json().catch(() => ({}));
+        const data = Array.isArray(j?.data) ? j.data : [];
+        const mapped = {};
+        for (const it of data) {
+          mapped[String(it.mproducts_id)] = {
+            qty: Number(it.qty) || 0,
+            n: Number(it.n) || 0,
+          };
+        }
+        setPengSummary(mapped);
+      } catch {}
+    },
+    [base, ensureProfile, perintahId]
+  );
+
+  /* ====== Load history pengalihan per produk ====== */
+  const loadPengalihanHistory = useCallback(
+    async (mId, perintahIdArg) => {
+      try {
+        const token =
+          tokenRef.current || (await AsyncStorage.getItem(KEY_TOKEN));
+        if (!token) return;
+        const dId = await ensureProfile(token);
+        const pid = perintahIdArg ?? perintahId;
+        if (!pid || !mId) return;
+
+        const q = new URLSearchParams({
+          perintah_id: String(pid),
+          mproducts_id: String(mId),
+          ...(dId ? { divisi_id: String(dId) } : {}),
+        }).toString();
+
+        const r = await fetch(`${base}/api/pengalihan?${q}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        });
+        if (!r.ok) return;
+        const j = await r.json().catch(() => ({}));
+        const arr = Array.isArray(j?.data) ? j.data : [];
+        const list = arr.map((it) => ({
+          id: it.id,
+          qty: Number(it.qty) || 0,
+          note: it.keterangan || "",
+          target_id: it.target_mproducts_id ?? null,
+          target_name: it.target_product_name || "",
+        }));
+        setPengHistory((p) => ({ ...p, [String(mId)]: list }));
+      } catch {}
+    },
+    [base, ensureProfile, perintahId]
+  );
+
+  /* ====== Handlers buka / tutup modal pengalihan ====== */
+  const openPengalihan = useCallback((item) => {
+    setPengOpenId(item.mproducts_id);
+    setPengProdName(item.product_name || "");
+    setPengForm({ qty: "", note: "" });
+    setPengTarget(null);
+  }, []);
+
+  const closePengalihan = () => {
+    setPengOpenId(null);
+    setPengProdName("");
+    setPengForm({ qty: "", note: "" });
+    setPengTarget(null);
+  };
+
+  useEffect(() => {
+    if (pengOpenId) {
+      // kalau pakai master produk:
+      loadProdukTujuanList();
+    }
+  }, [pengOpenId, loadProdukTujuanList]);
+
+
+  useEffect(() => {
+    if (pengOpenId && perintahId) loadPengalihanHistory(pengOpenId, perintahId);
+  }, [pengOpenId, perintahId, loadPengalihanHistory]);
+
+  /* ====== Simpan pengalihan ====== */
+  const savePengalihan = useCallback(async () => {
+    const qty = Number((pengForm.qty || "").replace(/\D+/g, "")) || 0;
+    const note = pengForm.note?.trim() || "";
+    if (!pengOpenId) return;
+
+    if (qty <= 0) return Alert.alert("Validasi", "Jumlah harus > 0.");
+    if (!pengTarget?.mproducts_id)
+      return Alert.alert("Validasi", "Pilih produk tujuan pengalihan.");
+
+    const token = await AsyncStorage.getItem(KEY_TOKEN);
+    const dId = await ensureProfile(token);
+    if (!token || !perintahId) return;
+
+    // Optimistic UI
+    setPengHistory((p) => {
+      const key = String(pengOpenId);
+      const cur = p[key] || [];
+      return {
+        ...p,
+        [key]: [
+          ...cur,
+          {
+            qty,
+            note,
+            target_id: pengTarget.mproducts_id,
+            target_name: pengTarget.product_name,
+          },
+        ],
+      };
+    });
+
+    try {
+      const r = await fetch(`${base}/api/pengalihan`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          perintah_id: perintahId,
+          mproducts_id: pengOpenId,
+          target_mproducts_id: pengTarget.mproducts_id,
+          ...(dId ? { divisi_id: dId } : {}),
+          qty,
+          note,
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
+
+      await Promise.all([
+        loadPengalihanSummary(perintahId),
+        loadPengalihanHistory(pengOpenId, perintahId),
+        fetchData(),
+      ]);
+      setPengForm({ qty: "", note: "" });
+      setPengTarget(null);
+      setProdListOpen(false);
+    } catch (e) {
+      Alert.alert("Gagal simpan pengalihan", e?.message || String(e));
+    }
+  }, [
+    pengForm,
+    pengTarget,
+    pengOpenId,
+    base,
+    perintahId,
+    ensureProfile,
+    loadPengalihanSummary,
+    loadPengalihanHistory,
+    fetchData,
+  ]);
+
+  /* ====== Hapus pengalihan ====== */
+  const removePengalihan = useCallback(
+    async (index) => {
+      if (!pengOpenId) return;
+      const key = String(pengOpenId);
+      const arr = pengHistory[key] || [];
+      const row = arr[index];
+      if (!row?.id) {
+        setPengHistory((p) => {
+          const next = [...(p[key] || [])];
+          next.splice(index, 1);
+          return { ...p, [key]: next };
+        });
+        return;
+      }
+
+      try {
+        const token =
+          tokenRef.current || (await AsyncStorage.getItem(KEY_TOKEN));
+        if (!token) return;
+        const r = await fetch(`${base}/api/pengalihan/${row.id}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j?.message || `HTTP ${r.status}`);
+        }
+        await Promise.all([
+          loadPengalihanSummary(perintahId),
+          loadPengalihanHistory(pengOpenId, perintahId),
+        ]);
+      } catch (e) {
+        Alert.alert("Gagal hapus pengalihan", e?.message || String(e));
+      }
+    },
+    [
+      pengOpenId,
+      pengHistory,
+      base,
+      loadPengalihanSummary,
+      loadPengalihanHistory,
+      perintahId,
+    ]
   );
 
   /* ===== Loader summary semua produk ===== */
@@ -344,97 +619,112 @@ export default function HasilDivisiScreen() {
   );
 
   /* ===== Fetch list ===== */
-  const fetchData = useCallback(
-    async (d) => {
-      const date = d || tanggal;
-      try {
-        setLoading(true);
-        setError("");
-        setServerTotals(null);
+/* ===== Fetch list ===== */
+const fetchData = useCallback(
+  async (d) => {
+    const date = d || tanggal;
+    try {
+      setLoading(true);
+      setError("");
+      setServerTotals(null);
 
-        const token = await AsyncStorage.getItem(KEY_TOKEN);
-        tokenRef.current = token;
-        if (!token) {
-          router.replace("/login");
-          return;
-        }
+      const token = await AsyncStorage.getItem(KEY_TOKEN);
+      tokenRef.current = token;
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
 
-        const dId = await ensureProfile(token);
+      const dId = await ensureProfile(token);
 
-        // Tambah baseline_divisi_id=2 bila bukan divisi giling
-        const url =
-          `${base}/api/hasil-giling?date=${encodeURIComponent(date)}` +
-          `&only_net_positive=true&include_totals=true` +
-          (dId != null ? `&divisi_id=${dId}` : "") +
-          (dId !== 2 ? `&baseline_divisi_id=2` : "");
+      // endpoint utama hasil giling
+      const url =
+        `${base}/api/hasil-giling?date=${encodeURIComponent(date)}` +
+        `&only_net_positive=true&include_totals=true` +
+        (dId != null ? `&divisi_id=${dId}` : "") +
+        (dId !== 2 ? `&baseline_divisi_id=2` : "");
 
-        const res = await fetch(url, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        });
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      });
 
-        if (res.status === 404) {
-          setPerintahId(null);
-          setRows([]);
-          setVals({});
-          setRejects({});
-          setRejectSummary({});
-          setRowSaving({});
-          setRowSavedOk({});
-          setLastSaved({});
-          return;
-        }
-        if (res.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!res.ok) {
-          const t = await res.text();
-          throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`);
-        }
-
-        const json = await res.json();
-        const pId = json?.perintah_id ?? null;
-        setPerintahId(pId);
-
-        const data = Array.isArray(json?.data) ? json.data : [];
-        setRows(data);
-
-        // Prefill nilai input divisi ini dari realisasi_divisi (bukan display)
-        const init = {};
-        const savedInit = {};
-        for (const r of data) {
-          init[r.mproducts_id] = r?.realisasi_divisi ?? null;
-          savedInit[r.mproducts_id] = r?.realisasi_divisi ?? null;
-        }
-        setVals(init);
-        setLastSaved(savedInit);
-        setRowSaving({});
-        setRowSavedOk({});
-
-        // totals dari server (jika ada)
-        if (json?.totals) setServerTotals(json.totals);
-
-        // muat summary untuk badge & total reject
-        setRejectSummary({});
-        await loadRejectSummary(pId);
-      } catch (e) {
-        setError(e?.message || String(e));
+      if (res.status === 404) {
         setPerintahId(null);
         setRows([]);
         setVals({});
         setRejects({});
         setRejectSummary({});
-        setServerTotals(null);
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
+        setPengHistory({});
+        setPengSummary({});
+        setPengTarget(null);
+        setPengForm({ qty: "", note: "" });
+        setPengOpenId(null);
+        setRowSaving({});
+        setRowSavedOk({});
+        setLastSaved({});
+        return;
       }
-    },
-    [tanggal, router, ensureProfile, base, loadRejectSummary]
-  );
+
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`);
+      }
+
+      const json = await res.json();
+      const pId = json?.perintah_id ?? null;
+      setPerintahId(pId);
+
+      const data = Array.isArray(json?.data) ? json.data : [];
+      setRows(data);
+
+      // Prefill nilai input dari realisasi_divisi
+      const init = {};
+      const savedInit = {};
+      for (const r of data) {
+        init[r.mproducts_id] = r?.realisasi_divisi ?? null;
+        savedInit[r.mproducts_id] = r?.realisasi_divisi ?? null;
+      }
+      setVals(init);
+      setLastSaved(savedInit);
+      setRowSaving({});
+      setRowSavedOk({});
+
+      if (json?.totals) setServerTotals(json.totals);
+
+      // load summary reject & pengalihan setelah data selesai
+      setRejectSummary({});
+      await loadRejectSummary(pId);
+      await loadPengalihanSummary(pId);
+
+    } catch (e) {
+      setError(e?.message || String(e));
+      setPerintahId(null);
+      setRows([]);
+      setVals({});
+      setRejects({});
+      setRejectSummary({});
+      setPengHistory({});
+      setPengSummary({});
+      setPengTarget(null);
+      setPengForm({ qty: "", note: "" });
+      setPengOpenId(null);
+      setServerTotals(null);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  },
+  [tanggal, router, ensureProfile, base, loadRejectSummary, loadPengalihanSummary]
+);
+
 
   useEffect(() => {
     fetchData();
@@ -571,7 +861,7 @@ export default function HasilDivisiScreen() {
     setRejOpenId(item.mproducts_id);
     setRejProdName(item.product_name || "");
     setRejForm({ qty: "", note: "" });
-    setRejPhoto(null);
+    setRejPhotos([]);
   }, []);
 
   const takeRejectPhoto = React.useCallback(async () => {
@@ -594,10 +884,10 @@ export default function HasilDivisiScreen() {
 
       // 2) opsi aman
       const opts = {
-        mediaTypes: ['images'],
+        mediaTypes: ["images"], // ✅ langsung pakai string "images"
         allowsEditing: false,
         quality: 0.7,
-        cameraType: ImagePicker.CameraType.back,
+        cameraFacing: "back", // ✅ ganti dari CameraType.back → cameraFacing
       };
 
       // 3) web fallback: di web, camera biasanya jatuh ke file picker
@@ -608,7 +898,7 @@ export default function HasilDivisiScreen() {
 
       if (result?.canceled) return;
       const asset = result?.assets?.[0];
-      if (asset?.uri) setRejPhoto(asset.uri);
+      if (asset?.uri) setRejPhotos((prev) => [...prev, asset.uri]);
     } catch (e) {
       const msg = String(e?.message || e);
       // 4) fallback bila native modul belum ada (dev client belum rebuild)
@@ -621,6 +911,46 @@ export default function HasilDivisiScreen() {
       Alert.alert("Kamera", msg);
     }
   }, [camPerm, requestCamPerm, router]);
+  const pickRejectFromGallery = useCallback(async () => {
+    try {
+      Keyboard.dismiss();
+
+      // minta izin galeri (library)
+      const { status } =
+        (await ImagePicker.requestMediaLibraryPermissionsAsync?.()) ?? {};
+      if (status !== "granted") {
+        Alert.alert("Izin Galeri", "Aktifkan izin akses foto/galeri.");
+        return;
+      }
+
+      // opsi: coba multiple selection jika tersedia (iOS 14+/web mendukung, Android modern juga sudah)
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"], // ✅ langsung pakai string "images"
+        allowsMultipleSelection: true,
+        quality: 0.7,
+        selectionLimit: 10,
+      });
+
+      if (result?.canceled) return;
+
+      // normalisasi daftar assets → uris[]
+      const uris = Array.isArray(result?.assets)
+        ? result.assets.map((a) => a.uri).filter(Boolean)
+        : result?.assets?.[0]?.uri
+        ? [result.assets[0].uri]
+        : [];
+
+      if (!uris.length) return;
+
+      // gabungkan dengan yang sudah ada (hindari duplikat sederhana)
+      setRejPhotos((prev) => {
+        const set = new Set([...(prev || []), ...uris]);
+        return Array.from(set);
+      });
+    } catch (e) {
+      Alert.alert("Galeri", String(e?.message || e));
+    }
+  }, []);
 
   useEffect(() => {
     if (rejOpenId && perintahId) {
@@ -632,7 +962,7 @@ export default function HasilDivisiScreen() {
     setRejOpenId(null);
     setRejProdName("");
     setRejForm({ qty: "", note: "" });
-    setRejPhoto(null);
+    setRejPhotos([]);
   };
 
   // saat modal terbuka: muat list + reset pilihan
@@ -649,7 +979,7 @@ export default function HasilDivisiScreen() {
     const qty = Number((rejForm.qty || "").toString().replace(/\D+/g, "")) || 0;
     const note = String(rejForm.note || "").trim();
     if (!rejOpenId) return;
-  
+
     if (qty <= 0) {
       Alert.alert("Validasi", "Jumlah harus lebih dari 0.");
       return;
@@ -660,11 +990,11 @@ export default function HasilDivisiScreen() {
       return;
     }
     setListError(false);
-  
+
     const token = await AsyncStorage.getItem(KEY_TOKEN);
     const dId = await ensureProfile(token);
     const listId = selectedList.id;
-  
+
     // Optimistic UI
     setRejects((p) => {
       const key = String(rejOpenId);
@@ -673,14 +1003,19 @@ export default function HasilDivisiScreen() {
         ...p,
         [key]: [
           ...cur,
-          { qty, note, listreject_id: listId, listreject_name: selectedList?.keterangan || "" },
+          {
+            qty,
+            note,
+            listreject_id: listId,
+            listreject_name: selectedList?.keterangan || "",
+          },
         ],
       };
     });
-  
+
     try {
       if (!token || !perintahId) return;
-  
+
       // 1) simpan reject item
       const r = await fetch(`${base}/api/rejects`, {
         method: "POST",
@@ -696,13 +1031,13 @@ export default function HasilDivisiScreen() {
           items: [{ qty, note, listreject_id: listId }],
         }),
       });
-  
+
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
-  
+
       // 2) pastikan kita punya id hasil_reject yang baru
       let createdId = j?.data?.items?.[0]?.id ?? j?.data?.id ?? j?.id ?? null;
-  
+
       // kalau tidak ada di response -> ambil lagi history item ini lalu cari baris yang baru dibuat
       if (!createdId) {
         const q = new URLSearchParams({
@@ -710,47 +1045,65 @@ export default function HasilDivisiScreen() {
           mproducts_id: String(rejOpenId),
           ...(dId != null ? { divisi_id: String(dId) } : {}),
         }).toString();
-  
+
         const r2 = await fetch(`${base}/api/rejects?${q}`, {
-          headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
         });
         const j2 = await r2.json().catch(() => ({}));
         const arr = Array.isArray(j2?.data) ? j2.data : [];
-  
+
         // cari dari belakang dengan signature qty/note/listreject_id yg sama
-        const found = [...arr].reverse().find(
-          (x) =>
-            Number(x?.qty_reject) === qty &&
-            String(x?.keterangan || "") === note &&
-            (x?.listreject_id == listId)
-        );
+        const found = [...arr]
+          .reverse()
+          .find(
+            (x) =>
+              Number(x?.qty_reject) === qty &&
+              String(x?.keterangan || "") === note &&
+              x?.listreject_id == listId
+          );
         createdId = found?.id ?? null;
       }
-  
-      // 3) kalau ada foto & sudah punya id -> upload fotonya (multipart)
-      if (rejPhoto && createdId) {
-        await uploadRejectPhoto(createdId, rejPhoto, base, token);
+
+      // 3) kalau ada foto-foto & sudah punya id -> upload semuanya (multipart)
+      if (rejPhotos?.length && createdId) {
+        for (const uri of rejPhotos) {
+          try {
+            await uploadRejectPhoto(createdId, uri, base, token);
+          } catch (e) {
+            // kalau satu gagal, lanjutkan yang lain
+            console.warn("upload photo failed:", e?.message || e);
+          }
+        }
       }
-  
+
       // 4) refresh ringkasan & history
       await Promise.all([
         loadRejectSummary(perintahId),
         loadRejectHistory(rejOpenId, perintahId),
       ]);
-  
+
       // 5) reset form
       setRejForm({ qty: "", note: "" });
       setSelectedList(null);
       setListOpen(false);
-      setRejPhoto(null);
+      setRejPhotos([]);
     } catch (e) {
       Alert.alert("Gagal simpan reject", e?.message || String(e));
     }
   }, [
-    rejForm, rejOpenId, rejPhoto, base, perintahId,
-    ensureProfile, loadRejectSummary, loadRejectHistory, selectedList
+    rejForm,
+    rejOpenId,
+    rejPhotos,
+    base,
+    perintahId,
+    ensureProfile,
+    loadRejectSummary,
+    loadRejectHistory,
+    selectedList,
   ]);
-  
 
   const removeReject = useCallback(
     async (index) => {
@@ -955,6 +1308,21 @@ export default function HasilDivisiScreen() {
         {leftColHeaderLabel}
       </Text>
       <Text style={[s.cell, s.colReal, s.headerText, s.center]}>Realisasi</Text>
+  
+      {divisiId === 4 && (
+  <>
+    <Text style={[s.cell, s.colPengalihan, s.headerText, s.center]}>
+      Pengalihan
+    </Text>
+    <Text style={[s.cell, s.colQtyMasuk, s.headerText, s.center]}>
+      Masuk
+    </Text>
+    {/* <Text style={[s.cell, s.colQtyKeluar, s.headerText, s.center]}>
+      Keluar
+    </Text> */}
+  </>
+)}
+  
       <Text style={[s.cell, s.colReject, s.headerText, s.center]}>Reject</Text>
       <Text
         style={[s.cell, s.colSelisih, s.headerText, s.center, s.noRightBorder]}
@@ -963,19 +1331,34 @@ export default function HasilDivisiScreen() {
       </Text>
     </View>
   );
+  
 
   const renderItem = ({ item, index }) => {
     const mId = item.mproducts_id;
     const myInput = vals[mId] ?? null;
-
+  
+    // warna baris berbeda bila hasil pengalihan
+    const isPengalihan = !!item.is_pengalihan;
+    const rowStyle = [
+      s.row,
+      index % 2 === 0 ? s.rowEven : s.rowOdd,
+      isPengalihan && { backgroundColor: "#F4F9F4" }, // 🌿 hijau lembut
+    ];
+  
     return (
-      <View style={[s.row, index % 2 === 0 ? s.rowEven : s.rowOdd]}>
+      <View style={rowStyle}>
         <Text style={[s.cell, s.colNo, s.center]}>{index + 1}</Text>
-
+  
         <Text style={[s.cell, s.colProduk]} numberOfLines={2}>
           {item?.product_name || "-"}
+          {isPengalihan && (
+            <Text style={{ color: "#6B7280", fontSize: 10, fontStyle: "italic" }}>
+              {" "}
+              (hasil pengalihan)
+            </Text>
+          )}
         </Text>
-
+  
         <Text style={[s.cell, s.colRight, s.semibold, s.primaryDarkTxt]}>
           {fmt(
             divisiId === 2
@@ -984,7 +1367,7 @@ export default function HasilDivisiScreen() {
             0
           )}
         </Text>
-
+  
         <View style={[s.cell, s.colReal, { paddingVertical: 8 }]}>
           <View
             style={{
@@ -994,24 +1377,99 @@ export default function HasilDivisiScreen() {
               justifyContent: "center",
             }}
           >
-            <TextInput
-              ref={(el) => (inputRefs.current[mId] = el)}
-              placeholder="0"
-              value={
-                myInput == null
-                  ? ""
-                  : String(myInput).replace(/\B(?=(\d{3})+(?!\d))/g, ".")
-              }
-              onChangeText={(txt) => handleChange(mId, txt)}
-              keyboardType="numeric"
-              returnKeyType="next"
-              onSubmitEditing={() => handleSubmitEditing(index)}
-              onBlur={() => saveRow(mId)}
-              style={s.input}
-            />
+          <TextInput
+  ref={(el) => (inputRefs.current[mId] = el)}
+  placeholder="0"
+  value={
+    myInput != null
+      ? String(myInput).replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+      : String(item.realisasi_murni || 0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+  }
+  onChangeText={(txt) => handleChange(mId, txt)}
+  keyboardType="numeric"
+  returnKeyType="next"
+  onSubmitEditing={() => handleSubmitEditing(index)}
+  onBlur={() => saveRow(mId)}
+  editable={!isPengalihan} // 🔒 tetap tidak bisa input jika hasil pengalihan
+  selectTextOnFocus={!isPengalihan}
+  placeholderTextColor={isPengalihan ? "#9CA3AF" : "#94A3B8"}
+  style={[
+    s.input,
+    isPengalihan && {
+      backgroundColor: "#F3F4F6",
+      color: "#9CA3AF",
+      borderColor: "#E5E7EB",
+    },
+  ]}
+/>
+
           </View>
         </View>
+  
+        {/* kolom Pengalihan (divisi 4) */}
+        {divisiId === 4 && (
+          <View style={[s.cell, s.colPengalihan, s.center]}>
+            {(() => {
+              const sum = pengSummary[String(mId)] || { qty: 0, n: 0 };
+              const badgeCount = sum.n || 0;
+              const qtySum = sum.qty || 0;
+              return (
+                <>
+                  <Pressable
+                    style={s.rejBtn}
+                    onPress={() => openPengalihan(item)}
+                    disabled={isPengalihan} // tidak bisa buka modal dari produk hasil pengalihan
+                  >
+                    <MaterialCommunityIcons
+                      name="swap-horizontal"
+                      size={20}
+                      color={
+                        isPengalihan
+                          ? "#9CA3AF"
+                          : badgeCount
+                          ? "#1F7A28"
+                          : COLORS.sub
+                      }
+                    />
+                    {!!badgeCount && !isPengalihan && (
+                      <View style={s.badge}>
+                        <Text style={s.badgeTxt}>{badgeCount}</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                  {!!qtySum && <Text style={s.rejQtySum}>{fmt(qtySum, 0)}</Text>}
+                </>
+              );
+            })()}
+          </View>
+        )}
+{divisiId === 4 && (
+  <>
+    <Text
+      style={[
+        s.cell,
+        s.colQtyMasuk,
+        s.center,
+        { color: COLORS.primaryDark, fontWeight: "800" },
+      ]}
+    >
+      {fmt(item.qty_pengalihan_masuk || 0, 0)}
+    </Text>
+    {/* <Text
+      style={[
+        s.cell,
+        s.colQtyKeluar,
+        s.center,
+        { color: COLORS.danger, fontWeight: "800" },
+      ]}
+    >
+      {fmt(item.qty_pengalihan_keluar || 0, 0)}
+    </Text> */}
+  </>
+)}
 
+
+        {/* kolom Reject */}
         <View style={[s.cell, s.colReject, s.center]}>
           {(() => {
             const sum = rejectSummary[String(mId)] || { qty: 0, n: 0 };
@@ -1019,15 +1477,25 @@ export default function HasilDivisiScreen() {
             const rejQtySum = sum.qty || 0;
             return (
               <>
-                <Pressable style={s.rejBtn} onPress={() => openReject(item)}>
+                <Pressable
+                  style={s.rejBtn}
+                  onPress={() => openReject(item)}
+                  disabled={isPengalihan} // hasil pengalihan tidak perlu reject manual
+                >
                   <MaterialCommunityIcons
                     name={
                       badgeCount ? "clipboard-off" : "clipboard-off-outline"
                     }
                     size={20}
-                    color={badgeCount ? "#B91C1C" : COLORS.sub}
+                    color={
+                      isPengalihan
+                        ? "#9CA3AF"
+                        : badgeCount
+                        ? "#B91C1C"
+                        : COLORS.sub
+                    }
                   />
-                  {!!badgeCount && (
+                  {!!badgeCount && !isPengalihan && (
                     <View style={s.badge}>
                       <Text style={s.badgeTxt}>{badgeCount}</Text>
                     </View>
@@ -1040,7 +1508,7 @@ export default function HasilDivisiScreen() {
             );
           })()}
         </View>
-
+  
         <Text
           style={[
             s.cell,
@@ -1057,46 +1525,102 @@ export default function HasilDivisiScreen() {
       </View>
     );
   };
+  
 
   // Footer (tampil total Reject qty di bawah kolom Reject)
-  const TableFooter = (
-    <View style={[s.row, s.footerRow]}>
-      <Text style={[s.cell, s.colNo, s.center]}>—</Text>
-      <Text style={[s.cell, s.colProduk, s.semibold, s.center]}>Total</Text>
+// Footer (tampil total Reject & Pengalihan)
+const totalPengQty = useMemo(() => {
+  return rows.reduce((sum, r) => {
+    const s = pengSummary[String(r.mproducts_id)];
+    return sum + (s?.qty || 0);
+  }, 0);
+}, [rows, pengSummary]);
 
-      <Text style={[s.cell, s.colRight, s.semibold, s.primaryDarkTxt]}>
-        {fmt(divisiId === 2 ? totals.qty_total : totals.realisasi, 0)}
-      </Text>
+const TableFooter = (
+  <View style={[s.row, s.footerRow]}>
+    <Text style={[s.cell, s.colNo, s.center]}>—</Text>
+    <Text style={[s.cell, s.colProduk, s.semibold, s.center]}>Total</Text>
 
-      <Text style={[s.cell, s.colReal]}>{fmt(totals.realisasi, 0)}</Text>
+    <Text style={[s.cell, s.colRight, s.semibold, s.primaryDarkTxt]}>
+      {fmt(divisiId === 2 ? totals.qty_total : totals.realisasi, 0)}
+    </Text>
+
+    <Text style={[s.cell, s.colReal]}>{fmt(totals.realisasi, 0)}</Text>
+
+    {divisiId === 4 && (
       <Text
         style={[
           s.cell,
-          s.colReject,
+          s.colPengalihan,
           s.center,
-          {
-            color: totalRejectQty > 0 ? COLORS.danger : COLORS.text,
-            fontWeight: "800",
-          },
+          { fontWeight: "800", color: totalPengQty ? COLORS.primaryDark : COLORS.sub },
         ]}
       >
-        {fmt(totalRejectQty, 0)}
+        {fmt(totalPengQty, 0)}
       </Text>
-      <Text
-        style={[
-          s.cell,
-          s.colSelisih,
-          s.noRightBorder,
-          {
-            color: totals.selisih < 0 ? COLORS.danger : COLORS.primaryDark,
-            fontWeight: "900",
-          },
-        ]}
-      >
-        {fmt(totals.selisih, 0)}
-      </Text>
-    </View>
-  );
+    )}
+{divisiId === 4 && (
+  <>
+    <Text
+      style={[
+        s.cell,
+        s.colQtyMasuk,
+        s.center,
+        { color: COLORS.primaryDark, fontWeight: "800" },
+      ]}
+    >
+      {fmt(
+        serverTotals?.qty_pengalihan_masuk ??
+          rows.reduce((a, b) => a + (b.qty_pengalihan_masuk || 0), 0),
+        0
+      )}
+    </Text>
+    {/* <Text
+      style={[
+        s.cell,
+        s.colQtyKeluar,
+        s.center,
+        { color: COLORS.danger, fontWeight: "800" },
+      ]}
+    >
+      {fmt(
+        serverTotals?.qty_pengalihan_keluar ??
+          rows.reduce((a, b) => a + (b.qty_pengalihan_keluar || 0), 0),
+        0
+      )}
+    </Text> */}
+  </>
+)}
+
+    <Text
+      style={[
+        s.cell,
+        s.colReject,
+        s.center,
+        {
+          color: totalRejectQty > 0 ? COLORS.danger : COLORS.text,
+          fontWeight: "800",
+        },
+      ]}
+    >
+      {fmt(totalRejectQty, 0)}
+    </Text>
+
+    <Text
+      style={[
+        s.cell,
+        s.colSelisih,
+        s.noRightBorder,
+        {
+          color: totals.selisih < 0 ? COLORS.danger : COLORS.primaryDark,
+          fontWeight: "900",
+        },
+      ]}
+    >
+      {fmt(totals.selisih, 0)}
+    </Text>
+  </View>
+);
 
   const FooterWithSpacer = () => (
     <>
@@ -1144,20 +1668,51 @@ export default function HasilDivisiScreen() {
                     setRejForm((f) => ({ ...f, qty: t.replace(/\D+/g, "") }))
                   }
                 />
-                {rejPhoto ? (
-                  <Image source={{ uri: rejPhoto }} style={s.photoThumb} />
-                ) : null}
 
+                {/* tombol kamera */}
                 <Pressable
                   onPress={takeRejectPhoto}
                   style={s.cameraBtn}
                   android_ripple={{ color: "#E5E7EB", borderless: true }}
                 >
                   <Ionicons name="camera-outline" size={18} color="#111827" />
-                  {/* badge kecil hijau kalau sudah ada foto */}
-                  {rejPhoto ? <View style={s.camBadge} /> : null}
+                </Pressable>
+
+                {/* tombol galeri */}
+                <Pressable
+                  onPress={pickRejectFromGallery}
+                  style={[s.cameraBtn, { marginLeft: 6 }]}
+                  android_ripple={{ color: "#E5E7EB", borderless: true }}
+                >
+                  <Ionicons name="image-outline" size={18} color="#111827" />
+                  {rejPhotos?.length ? <View style={s.camBadge} /> : null}
                 </Pressable>
               </View>
+              {/* grid thumbnail */}
+              {rejPhotos?.length ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginTop: 6 }}
+                  contentContainerStyle={{ gap: 8 }}
+                >
+                  {rejPhotos.map((uri, idx) => (
+                    <View key={uri + idx} style={{ position: "relative" }}>
+                      <Image source={{ uri }} style={s.photoThumb} />
+                      <Pressable
+                        onPress={() =>
+                          setRejPhotos((prev) =>
+                            prev.filter((_, i) => i !== idx)
+                          )
+                        }
+                        style={s.thumbDelete}
+                      >
+                        <Ionicons name="close" size={14} color="#fff" />
+                      </Pressable>
+                    </View>
+                  ))}
+                </ScrollView>
+              ) : null}
               {/* Jenis Reject – trigger modal list */}
               <Text style={[s.fieldLabel, { marginTop: 10 }]}>
                 Jenis Reject <Text style={{ color: COLORS.danger }}>*</Text>
@@ -1254,6 +1809,229 @@ export default function HasilDivisiScreen() {
       </View>
     </Modal>
   );
+
+  /* ===== Modal Pengalihan ===== */
+const PengalihanModal = (
+  <Modal
+    visible={!!pengOpenId}
+    transparent
+    animationType="fade"
+    onRequestClose={closePengalihan}
+    statusBarTranslucent
+  >
+    <View style={[s.modalOverlayTop, { paddingTop: insets.top + MODAL_TOP }]}>
+      <View style={s.modalCardTop}>
+        {/* Header */}
+        <View style={s.modalHeader}>
+          <Text style={s.modalTitle}>Input Pengalihan</Text>
+          <Pressable onPress={closePengalihan}>
+            <Ionicons name="close" size={22} />
+          </Pressable>
+        </View>
+        <Text style={s.modalSubTitle}>
+          {pengProdName || `Produk #${pengOpenId ?? ""}`}
+        </Text>
+
+        {/* Form */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={insets.top + MODAL_TOP + 12}
+        >
+          <View>
+            <Text style={s.fieldLabel}>Jumlah</Text>
+            <TextInput
+              style={[s.modalInput, { marginBottom: 8 }]}
+              placeholder="0"
+              keyboardType="numeric"
+              value={pengForm.qty}
+              onChangeText={(t) =>
+                setPengForm((f) => ({ ...f, qty: t.replace(/\D+/g, "") }))
+              }
+            />
+
+            <Text style={s.fieldLabel}>Produk Tujuan</Text>
+            <Pressable
+              onPress={() => setProdListOpen(true)}
+              style={[s.modalInput, { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
+            >
+              <Text style={{ color: pengTarget ? COLORS.text : COLORS.sub }}>
+                {pengTarget ? pengTarget.product_name : "Pilih produk tujuan"}
+              </Text>
+              <Ionicons name="chevron-down" size={16} color={COLORS.sub} />
+            </Pressable>
+
+            <Text style={[s.fieldLabel, { marginTop: 8 }]}>Keterangan</Text>
+            <TextInput
+              style={[s.modalInput, { height: 84, textAlignVertical: "top" }]}
+              placeholder="Catatan (opsional)"
+              multiline
+              value={pengForm.note}
+              onChangeText={(t) => setPengForm((f) => ({ ...f, note: t }))}
+            />
+
+            <Pressable style={s.saveBtn} onPress={savePengalihan}>
+              <MaterialCommunityIcons name="content-save-outline" size={16} color="#fff" />
+              <Text style={s.saveBtnTxt}>Simpan</Text>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+
+        {/* History */}
+        <View style={{ marginTop: 10, maxHeight: 320 }}>
+          <FlatList
+            data={pengHistory[String(pengOpenId)] || []}
+            keyExtractor={(_, idx) => String(idx)}
+            ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+            removeClippedSubviews={false}
+            ListEmptyComponent={
+              <Text style={s.emptySmall}>Belum ada pengalihan untuk item ini.</Text>
+            }
+            renderItem={({ item, index }) => (
+              <View style={s.rejRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.rejName}>Jumlah: {fmt(item.qty, 0)}</Text>
+                  {!!item.target_name && (
+                    <Text style={s.rejNote}>Ke: {item.target_name}</Text>
+                  )}
+                  {!!item.note && <Text style={s.rejNote}>{item.note}</Text>}
+                </View>
+                <Pressable style={s.rejDelBtn} onPress={() => removePengalihan(index)}>
+                  <Ionicons name="trash-outline" size={18} color="#B91C1C" />
+                </Pressable>
+              </View>
+            )}
+          />
+        </View>
+      </View>
+    </View>
+  </Modal>
+);
+
+/* ===== Modal Pilih Produk Tujuan ===== */
+const ProductListModal = (
+  <Modal
+    visible={prodListOpen}
+    transparent
+    animationType="fade"
+    onRequestClose={() => setProdListOpen(false)}
+    statusBarTranslucent
+  >
+    <Pressable
+      style={{
+        flex: 1,
+        backgroundColor: "rgba(0,0,0,0.35)",
+        paddingTop: insets.top + MODAL_TOP,
+      }}
+      onPress={() => setProdListOpen(false)}
+    >
+      <View
+      onStartShouldSetResponder={() => true} // cegah bubbling ke backdrop
+        style={{
+          marginHorizontal: 20,
+          backgroundColor: "#fff",
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: BORDER,
+          maxHeight: 420,
+          overflow: "hidden",
+        }}
+      >
+        <View
+          style={{
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            borderBottomWidth: 1,
+            borderBottomColor: BORDER,
+            backgroundColor: "#F8FAFC",
+          }}
+        >
+          <Text style={{ fontWeight: "900", color: COLORS.text }}>
+            Pilih Produk Tujuan
+          </Text>
+        </View>
+
+        <View
+  style={{
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+    backgroundColor: "#fff",
+  }}
+>
+  <TextInput
+    placeholder="Cari produk…"
+    value={produkSearch}
+    onChangeText={setProdukSearch}
+    style={[s.modalInput]}
+  />
+</View>
+
+{produkTujuanLoading ? (
+  <View style={{ padding: 16, alignItems: "center" }}>
+    <ActivityIndicator />
+    <Text style={{ marginTop: 6, color: COLORS.sub, fontSize: 12 }}>
+      Memuat daftar…
+    </Text>
+  </View>
+) : produkTujuanError ? (
+  <View style={{ padding: 16 }}>
+    <Text style={{ color: COLORS.danger, fontSize: 12 }}>
+      {produkTujuanError}
+    </Text>
+  </View>
+) : (
+  <ScrollView
+    style={{ maxHeight: 360 }}
+    keyboardShouldPersistTaps="handled"
+    nestedScrollEnabled
+    showsVerticalScrollIndicator
+  >
+    {produkTujuanList
+      .filter((p) => p.mproducts_id !== pengOpenId) // jangan pilih dirinya sendiri
+      .filter((p) =>
+        produkSearch
+          ? p.product_name.toLowerCase().includes(produkSearch.toLowerCase())
+          : true
+      )
+      .map((p) => {
+        const active = pengTarget?.mproducts_id === p.mproducts_id;
+        return (
+          <Pressable
+            key={p.mproducts_id}
+            onPress={() => {
+              setPengTarget({ mproducts_id: p.mproducts_id, product_name: p.product_name });
+              setProdListOpen(false);
+            }}
+            style={{
+              paddingVertical: 12,
+              paddingHorizontal: 12,
+              borderBottomWidth: 1,
+              borderBottomColor: BORDER,
+              backgroundColor: active ? "#F1F5F9" : "#fff",
+            }}
+          >
+            <Text
+              style={{
+                color: COLORS.text,
+                fontWeight: active ? "800" : "400",
+              }}
+            >
+              {p.product_name}
+            </Text>
+          </Pressable>
+        );
+      })}
+  </ScrollView>
+)}
+
+      </View>
+    </Pressable>
+  </Modal>
+);
+
   /* ===== Modal Dropdown List Reject (terpisah) ===== */
   const ListRejectModal = (
     <Modal
@@ -1439,7 +2217,9 @@ export default function HasilDivisiScreen() {
       </View>
 
       {RejectModal}
+      {PengalihanModal} 
       {ListRejectModal}
+      {ProductListModal}
     </SafeAreaView>
   );
 }
@@ -1592,16 +2372,35 @@ const s = StyleSheet.create({
 
   colNo: { width: 48, color: COLORS.text },
   colProduk: { width: 140, flexShrink: 1, color: COLORS.text },
-  colRight: { width: 70, textAlign: "center", color: COLORS.text },
+  colRight: { width: 60, textAlign: "center", color: COLORS.text },
   colReal: {
-    width: 120,
+    width: 80,
     textAlign: "center",
     alignItems: "center",
     color: COLORS.text,
   },
-  colReject: { width: 90, justifyContent: "center", alignItems: "center" },
-  colSelisih: { width: 80, textAlign: "right", color: COLORS.text },
-
+  colPengalihan: { width: 80, textAlign: "center", color: COLORS.text, alignItems: "center" },
+  colReject: { width: 60, justifyContent: "center", alignItems: "center" },
+  colSelisih: { width: 50, textAlign: "center", color: COLORS.text },
+  colQtyPengalihan: {
+    width: 90,
+    textAlign: "center",
+    justifyContent: "center",
+    color: COLORS.text,
+  },
+  colQtyMasuk: {
+    width: 50,
+    textAlign: "center",
+    justifyContent: "center",
+    color: COLORS.text,
+  },
+  colQtyKeluar: {
+    width: 80,
+    textAlign: "center",
+    justifyContent: "center",
+    color: COLORS.text,
+  },
+  
   center: { textAlign: "center" },
   semibold: { fontWeight: "800" },
   primaryDarkTxt: { color: COLORS.primaryDark },
@@ -1721,7 +2520,19 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
   },
-
+  thumbDelete: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#111827",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#fff",
+  },
   saveBtn: {
     marginTop: 8,
     flexDirection: "row",
