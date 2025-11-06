@@ -760,7 +760,13 @@ export default function HomeScreen() {
         icon: "settings-outline",
         onPress: () => {},
       },
-  
+    // ✅ Tambah ini
+    (role?.toLowerCase() === "operasional") && {
+      key: "proyeksi_vs_mapping",
+      label: "Proyeksi SDM",
+      icon: "stats-chart-outline",
+      onPress: () => router.push("/ops/proyeksivsmapping"),
+    },
       ].filter(Boolean);
     return list.slice(0, 8);
   }, [role, hasNewUtama, maxTambahan, maxPengurangan, utamaRows, router]);

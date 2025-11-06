@@ -405,12 +405,14 @@ const fetchDivisiMap = useCallback(
           fetchDivisiMap(date, 6), // Poprok
           fetchDivisiMap(date, 4), // Dekor
         ]);
-        
+        console.log("Contoh data API:", data[0]);
         // sisipkan ke setiap row
         const dataWithExtras = data.map((r) => ({
           ...r,
           poprok: mapPoprok[String(r.mproducts_id)] ?? 0,
           dekor: mapDekor[String(r.mproducts_id)] ?? 0,
+          pengalihan_masuk: Number(r?.qty_pengalihan_masuk ?? r?.pengalihan_masuk ?? 0),
+  pengalihan_keluar: Number(r?.qty_pengalihan_keluar ?? r?.pengalihan_keluar ?? 0),
         }));
         
         setRows(dataWithExtras);
@@ -510,6 +512,12 @@ const fetchDivisiMap = useCallback(
       const dekor  = rows.reduce((a, b) => a + (Number(b?.dekor)  || 0), 0);
       return { poprok, dekor };
     }, [rows]);
+    // total kolom pengalihan masuk & keluar
+const totalsPengalihan = useMemo(() => {
+  const masuk = rows.reduce((a, b) => a + (Number(b?.pengalihan_masuk) || 0), 0);
+  const keluar = rows.reduce((a, b) => a + (Number(b?.pengalihan_keluar) || 0), 0);
+  return { masuk, keluar };
+}, [rows]);
   /* ===== Input handlers (nilai divisi ini) ===== */
   const handleChange = (mproducts_id, text) => {
     const n = parseDigits(text);
@@ -964,6 +972,13 @@ const fetchDivisiMap = useCallback(
       </Text>
       <Text style={[s.cell, s.colPop, s.headerText, s.center]}>Poprok</Text>
       <Text style={[s.cell, s.colDekor, s.headerText, s.center]}>Dekor</Text>
+         {/* 🔽 Tambahan */}
+    <Text style={[s.cell, s.colPengalihan, s.headerText, s.center]}>
+      Pengalihan +
+    </Text>
+    <Text style={[s.cell, s.colPengalihan, s.headerText, s.center]}>
+      Pengalihan -
+    </Text>
       <Text style={[s.cell, s.colReject, s.headerText, s.center]}>Reject</Text>
     </View>
   );
@@ -1002,6 +1017,27 @@ const fetchDivisiMap = useCallback(
         <Text style={[s.cell, s.colDekor, s.center]}>
           {fmt(item?.dekor || 0, 0)}
         </Text>
+       {/* Pengalihan + */}
+<Text style={[s.cell, s.colPengalihan, s.center]}>
+  {item?.pengalihan_masuk > 0 ? (
+    <Text style={{ color: COLORS.primaryDark, fontWeight: "900" }}>
+      +{fmt(item.pengalihan_masuk, 0)}
+    </Text>
+  ) : (
+    <Text style={{ color: COLORS.sub }}>—</Text>
+  )}
+</Text>
+
+{/* Pengalihan – */}
+<Text style={[s.cell, s.colPengalihan, s.center]}>
+  {item?.pengalihan_keluar > 0 ? (
+    <Text style={{ color: COLORS.danger, fontWeight: "900" }}>
+      -{fmt(item.pengalihan_keluar, 0)}
+    </Text>
+  ) : (
+    <Text style={{ color: COLORS.sub }}>—</Text>
+  )}
+</Text>
 
         {/* Kolom Reject: tampilkan angka total dari SEMUA divisi */}
         <Text style={[s.cell, s.colReject, s.center]}>
@@ -1038,6 +1074,15 @@ const fetchDivisiMap = useCallback(
       <Text style={[s.cell, s.colDekor, s.center, s.semibold]}>
        {fmt(totalsExtra.dekor, 0)}
      </Text>
+        {/* 🔽 Total Pengalihan Masuk */}
+    <Text style={[s.cell, s.colPengalihan, s.center, s.semibold, { color: COLORS.primaryDark }]}>
+      {fmt(totalsPengalihan.masuk, 0)}
+    </Text>
+
+    {/* 🔽 Total Pengalihan Keluar */}
+    <Text style={[s.cell, s.colPengalihan, s.center, s.semibold, { color: COLORS.danger }]}>
+      {fmt(totalsPengalihan.keluar, 0)}
+    </Text>
       <Text
         style={[
           s.cell,
@@ -1362,7 +1407,7 @@ const s = StyleSheet.create({
   colTarget: { width:60, textAlign: "center", color: COLORS.text },
   colPop: { width: 60, textAlign: "center", color: COLORS.text },
   colDekor: { width: 60, textAlign: "center", color: COLORS.text },
-
+  colPengalihan: { width: 70, textAlign: "center", color: COLORS.text },
   colReject: { width: 60, justifyContent: "center", alignItems: "center" },
   colSelisih: { width: 60, textAlign: "right", color: COLORS.text },
 

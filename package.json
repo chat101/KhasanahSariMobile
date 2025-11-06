@@ -43,7 +43,8 @@
     "@react-native-community/datetimepicker": "8.4.4",
     "expo-dev-client": "~6.0.12",
     "expo-camera": "~17.0.8",
-    "expo-image-picker": "~17.0.8"
+    "expo-image-picker": "~17.0.8",
+    "expo-screen-orientation": "~9.0.7"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",

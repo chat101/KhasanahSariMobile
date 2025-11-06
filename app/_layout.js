@@ -142,11 +142,15 @@ export default function Layout() {
         <Stack.Screen name="work-order-utama" options={{ title: "Work Order Utama" }} />
         <Stack.Screen name="work-order-tambahan" options={{ title: "Work Order Tambahan" }} />
         <Stack.Screen name="work-order-pengurangan" options={{ title: "Work Order Pengurangan" }} />
-
+      
         {/* ✅ tambahkan route hasil-divisi */}
         <Stack.Screen name="hasil-giling" options={{ title: "Hasil Divisi" }} />
         <Stack.Screen name="hasil-giling-admin" options={{ title: "Hasil Divisi Admin" }} />
-
+  {/* ✅ Tambahkan di bawah ini */}
+        <Stack.Screen
+        name="ops/proyeksivsmapping"
+        options={{ title: "Proyeksi vs Mapping SDM" }}
+      />
       </Stack>
     </SafeAreaProvider>
   );

@@ -420,7 +420,7 @@ const s = StyleSheet.create({
   },
   noRightBorder: { borderRightWidth: 0 },
 
-  colNo: { width: 48 },
+  colNo: { width: 60, textAlign: "center" },
   colProduk: { flex: 1, minWidth: 120,fontSize:12 },
   colRight: { width: 130, textAlign: "center" },
   headerText: { fontSize: 12, fontWeight: "900", color: COLORS.primaryDark },
